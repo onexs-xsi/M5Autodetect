@@ -1,0 +1,58 @@
+Sample Configuration:
+  - mcu: Example_MCU_Family
+    devices:
+      - name: Example_Device_Name
+        description: "This is a sample configuration showing all fields"
+        sku: "SKU:C123" # Product SKU
+        image: "https://example.com/path/to/image.webp" # Product image URL
+        docs: "https://docs.m5stack.com/en/core/example" # Documentation URL
+        check_pins:
+          10:
+            mode: input          # Options: input, input_pullup, input_pulldown
+            expect: 1            # Expected level: 0 (LOW) or 1 (HIGH)
+          11:
+            mode: input_pulldown
+            expect: 0
+        display:
+          - driver: spi          # Options: spi, i2c, dsi, uart
+            width: 320
+            height: 240
+            freq: 40000000
+            pins:
+              mosi: 23
+              sclk: 18
+              cs: 5
+              dc: 15
+              rst: 4
+              bl: 32
+          - driver: i2c
+            width: 128
+            height: 64
+            addr: 0x3C
+            freq: 400000
+            pins:
+              sda: 21
+              scl: 22
+            power_supplies:
+              - name: "VCC_3V3"
+                control: "Expander(0x20) Bit3"
+                active: 1
+        touch:
+          - driver: i2c
+            ic: gt911
+            addr: 0x14
+            pins:
+              sda: 21
+              scl: 22
+              int: 39
+              rst: 38
+        i2c_internal:
+          - port: 0
+            sda: 21
+            scl: 22
+            freq: 400000
+            detect:
+              - name: "AXP2101"
+                addr: 0x34
+              - name: "BM8563"
+                addr: 0x51

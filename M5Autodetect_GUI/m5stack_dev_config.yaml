@@ -1,0 +1,255 @@
+mcu_categories:
+- mcu: ESP32-S3
+  devices:
+  - name: M5AtomS3R
+    description: AtomS3R with ESP32-S3-PICO-1
+    sku: SKU:C126
+    eol: SALE
+    image: https://static-cdn.m5stack.com/resource/docs/products/core/AtomS3R/3.webp
+    docs: https://docs.m5stack.com/zh_CN/core/AtomS3R
+    variants: []
+    check_pins:
+      45:
+        mode: input
+        expect: 1
+      0:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 45
+      scl: 0
+      freq: 400000
+      detect:
+      - name: BMI270
+        addr: 104
+      - name: LP5562
+        addr: 48
+    display:
+    - driver: gc9107
+      width: 128
+      height: 128
+      freq: 40000000
+      pins:
+        bl: I2C(45,0)@0x30
+        cs: 14
+        dc: 42
+        mosi: 21
+        rst: 48
+        sclk: 15
+      identify:
+        cmd: 4
+        expect: 9504767
+        mask: 16777215
+        rst_before: true
+        rst_wait: 120
+    touch: []
+  - name: M5AtomEchoS3R
+    description: Atom EchoS3R with ESP32-S3-PICO-1
+    sku: SKU:C126-ECHO
+    eol: SALE
+    image: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1182/Atom_EchoS3R_02.webp
+    docs: https://docs.m5stack.com/en/core/Atom_EchoS3R
+    check_pins:
+      45:
+        mode: input
+        expect: 1
+      0:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 45
+      scl: 0
+      freq: 400000
+      detect:
+      - name: ES8311
+        addr: 24
+    variants: []
+    display: []
+    touch: []
+  - name: M5AtomS3
+    description: AtomS3 with ESP32-S3
+    sku: SKU:C123
+    eol: SALE
+    image: https://static-cdn.m5stack.com/resource/docs/products/core/AtomS3/3.webp
+    docs: https://docs.m5stack.com/zh_CN/core/AtomS3
+    variants: []
+    check_pins:
+      38:
+        mode: input
+        expect: 1
+      39:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 38
+      scl: 39
+      freq: 400000
+      detect:
+      - name: MPU6886
+        addr: 104
+    display:
+    - driver: gc9107
+      freq: 40000000
+      height: 128
+      pins:
+        bl: 16
+        cs: 15
+        dc: 33
+        mosi: 21
+        rst: 34
+        sclk: 17
+      width: 128
+      identify:
+        cmd: 4
+        expect: 9504767
+        mask: 16777215
+        rst_before: true
+        rst_wait: 120
+    touch: []
+  - name: M5AtomS3Lite
+    description: AtomS3 Lite with ESP32-S3
+    sku: SKU:C124
+    eol: SALE
+    image: https://static-cdn.m5stack.com/resource/docs/products/core/AtomS3%20Lite/img-ae1b2014-3c47-4f9f-8506-c6ec0667ac09.webp
+    docs: https://docs.m5stack.com/zh_CN/core/AtomS3%20Lite
+    variants: []
+    check_pins:
+      38:
+        mode: input
+        expect: 1
+      39:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 38
+      scl: 39
+      freq: 400000
+      detect: []
+    display: []
+    touch: []
+- mcu: ESP32-P4
+  devices:
+  - name: M5Tab5
+    description: M5Stack Tab5
+    sku: SKU:C145/K145
+    eol: SALE
+    image: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1132/C145_02.webp
+    docs: https://docs.m5stack.com/zh_CN/core/Tab5
+    variants:
+    - name: ST7123
+      identify_i2c:
+      - port: 0
+        sda: 29
+        scl: 30
+        freq: 400000
+        addr: 85
+      display:
+      - driver: st7123
+        width: 1280
+        height: 720
+        freq: 0
+        pins: {}
+      touch:
+      - driver: st7123
+        addr: 85
+        width: 0
+        height: 0
+        pins:
+          sda: 31
+          scl: 32
+          int: 23
+          rst: PI4IOE5V6408(0x43) Bit5
+    - name: IlI9881c
+      identify_i2c:
+      - port: 0
+        sda: 29
+        scl: 30
+        freq: 400000
+        addr: 20
+      display:
+      - driver: ili9881c
+        width: 1280
+        height: 720
+        freq: 0
+        pins: {}
+      touch:
+      - driver: gt911
+        addr: 20
+        width: 0
+        height: 0
+        pins:
+          sda: 31
+          scl: 32
+          int: 23
+          rst: PI4IOE5V6408(0x43) Bit5
+    check_pins:
+      2:
+        mode: input
+        expect: 1
+      1:
+        mode: input
+        expect: 0
+    i2c_internal:
+    - port: 0
+      sda: 29
+      scl: 30
+      freq: 400000
+      detect:
+      - name: PI4IOE5V6408_1
+        addr: 67
+      - name: PI4IOE5V6408_2
+        addr: 68
+    display: []
+    touch: []
+- mcu: ESP32
+  devices:
+  - name: M5AtomLite
+    description: Atom Lite with ESP32-PICO-D4
+    sku: SKU:C008
+    eol: SALE
+    image: https://static-cdn.m5stack.com/resource/docs/products/core/ATOM%20Lite/img-85e2d7f3-6562-4b51-bf1c-5f7988605dd0.webp
+    docs: https://docs.m5stack.com/zh_CN/core/ATOM%20Lite
+    variants: []
+    check_pins:
+      25:
+        mode: input
+        expect: 1
+      21:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 25
+      scl: 21
+      freq: 400000
+      detect: []
+    display: []
+    touch: []
+  - name: M5AtomMatrix
+    description: Atom Matrix with ESP32-PICO-D4
+    sku: SKU:C008-B
+    eol: SALE
+    image: https://static-cdn.m5stack.com/resource/docs/products/core/ATOM%20Matrix/img-c3488647-a432-47c1-8990-a873a8e62804.webp
+    docs: https://docs.m5stack.com/en/core/ATOM%20Matrix
+    variants: []
+    check_pins:
+      25:
+        mode: input
+        expect: 1
+      21:
+        mode: input
+        expect: 1
+    i2c_internal:
+    - port: 0
+      sda: 25
+      scl: 21
+      freq: 400000
+      detect:
+      - name: MPU6886
+        addr: 104
+    display: []
+    touch: []
