@@ -1,0 +1,20 @@
+{
+  "name": "M5Autodetect",
+  "version": "0.0.1",
+  "description": "Autodetect library for M5Stack",
+  "keywords": "m5stack, autodetect",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/onexs-xsi/M5Autodetect"
+  },
+  "authors": [
+    {
+      "name": "M5Stack",
+      "email": "support@m5stack.com",
+      "url": "https://m5stack.com"
+    }
+  ],
+  "license": "MIT",
+  "frameworks": ["arduino", "espidf"],
+  "platforms": ["espressif32"]
+}
