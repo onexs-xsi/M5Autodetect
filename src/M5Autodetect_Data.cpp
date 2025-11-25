@@ -26,6 +26,8 @@ const std::vector<DeviceInfo> devices_data = {
             { "gc9107", 128, 128, 40000000, 21, -1, 15, 14, 42, 48, -1, nullptr, "I2C(45,0)@0x30", 4, 9504767, 16777215, true, 120 },
         },
         {
+        },
+        {
         }
     },
     {
@@ -42,6 +44,8 @@ const std::vector<DeviceInfo> devices_data = {
             { 0, 45, 0, 400000, 1, {
                 { 0x18 },
             } },
+        },
+        {
         },
         {
         },
@@ -71,6 +75,8 @@ const std::vector<DeviceInfo> devices_data = {
             { "gc9107", 128, 128, 40000000, 21, -1, 17, 15, 33, 34, 16, nullptr, nullptr, 4, 9504767, 16777215, true, 120 },
         },
         {
+        },
+        {
         }
     },
     {
@@ -86,6 +92,8 @@ const std::vector<DeviceInfo> devices_data = {
         {
             { 0, 38, 39, 400000, 0, {
             } },
+        },
+        {
         },
         {
         },
@@ -118,6 +126,8 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { "st7123", 0x55, 0, 0, 0, 31, 32, 23, -1, "PI4IOE5V6408(0x43) Bit5" },
+        },
+        {
         }
     },
     {
@@ -144,6 +154,8 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { "gt911", 0x14, 0, 0, 0, 31, 32, 23, -1, "PI4IOE5V6408(0x43) Bit5" },
+        },
+        {
         }
     },
     {
@@ -159,6 +171,8 @@ const std::vector<DeviceInfo> devices_data = {
         {
             { 0, 25, 21, 400000, 0, {
             } },
+        },
+        {
         },
         {
         },
@@ -181,6 +195,8 @@ const std::vector<DeviceInfo> devices_data = {
             { 0, 25, 21, 400000, 1, {
                 { 0x68 },
             } },
+        },
+        {
         },
         {
         },

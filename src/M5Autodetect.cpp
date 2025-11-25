@@ -153,9 +153,15 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         if (has_i2c_to_check) {
             // Check i2c_checks pins
             for (const auto& i2c_bus : device.i2c_checks) {
-                pinMode(i2c_bus.sda, INPUT);
-                pinMode(i2c_bus.scl, INPUT);
-                delay(1);
+                if (i2c_bus.internal_pullup) {
+                    pinMode(i2c_bus.sda, INPUT_PULLUP);
+                    pinMode(i2c_bus.scl, INPUT_PULLUP);
+                    delay(5); // Extra delay for internal pullup to stabilize
+                } else {
+                    pinMode(i2c_bus.sda, INPUT);
+                    pinMode(i2c_bus.scl, INPUT);
+                    delay(1);
+                }
                 if (digitalRead(i2c_bus.sda) == LOW || digitalRead(i2c_bus.scl) == LOW) {
                     i2c_pins_high = false;
                     if (_debug >= debug_verbose) Serial.printf("  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
@@ -252,16 +258,112 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 uint32_t expect = (uint32_t)disp.identify_expect;
                 
                 if ((id & mask) == expect) {
-                    current_score += 2;
-                    if (_debug >= debug_verbose) Serial.printf("  [Pass] Screen ID Match (0x%06X)\r\n", id);
+                    current_score++;
+                    if (_debug >= debug_verbose) Serial.printf("  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
                 } else {
                     if (_debug >= debug_verbose) Serial.printf("  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
                 }
             }
         }
 
-        // 6. Additional (Future)
-        // if (checkAdditional()) current_score++;
+        // 6. Additional Tests
+        for (const auto& test : device.additional_tests) {
+            bool pass = false;
+            switch (test.type) {
+                case m5::autodetect::TEST_GPIO_READ:
+                    if (test.pin_a >= 0) {
+                        // pin_b as mode: 0=INPUT, 1=INPUT_PULLUP, 2=INPUT_PULLDOWN
+                        if (test.pin_b == 1) pinMode(test.pin_a, INPUT_PULLUP);
+                        else if (test.pin_b == 2) pinMode(test.pin_a, INPUT_PULLDOWN);
+                        else pinMode(test.pin_a, INPUT);
+                        
+                        delay(1);
+                        if (digitalRead(test.pin_a) == (int)test.expect) {
+                            pass = true;
+                        }
+                    }
+                    break;
+                    
+                case m5::autodetect::TEST_I2C_READ_REG:
+                    {
+                        TwoWire i2c(test.port);
+                        // pin_a=sda, pin_b=scl
+                        i2c.begin(test.pin_a, test.pin_b, test.freq);
+                        i2c.beginTransmission((uint8_t)test.addr);
+                        i2c.write((uint8_t)test.reg);
+                        if (i2c.endTransmission(false) == 0) {
+                            i2c.requestFrom((uint8_t)test.addr, (uint8_t)1);
+                            if (i2c.available()) {
+                                uint8_t val = i2c.read();
+                                if ((val & test.mask) == test.expect) {
+                                    pass = true;
+                                } else {
+                                    if (_debug >= debug_verbose) Serial.printf("    I2C Reg 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
+                                }
+                            }
+                        }
+                    }
+                    break;
+                    
+                case m5::autodetect::TEST_SPI_READ_CMD:
+                    {
+                        // pin_a=mosi, pin_b=miso, pin_c=sclk, pin_d=cs
+                        int mosi = test.pin_a;
+                        int miso = test.pin_b;
+                        int sclk = test.pin_c;
+                        int cs = test.pin_d;
+                        
+                        if (mosi >= 0 && sclk >= 0 && cs >= 0) {
+                            pinMode(cs, OUTPUT); digitalWrite(cs, HIGH);
+                            pinMode(sclk, OUTPUT); digitalWrite(sclk, LOW);
+                            pinMode(mosi, OUTPUT);
+                            if (miso >= 0) pinMode(miso, INPUT);
+                            
+                            digitalWrite(cs, LOW);
+                            
+                            // Send Command (reg)
+                            uint8_t cmd = (uint8_t)test.reg;
+                            for (int i = 0; i < 8; i++) {
+                                digitalWrite(mosi, (cmd & 0x80) ? HIGH : LOW);
+                                digitalWrite(sclk, HIGH);
+                                digitalWrite(sclk, LOW);
+                                cmd <<= 1;
+                            }
+                            
+                            // Read (expecting 1 byte for now, or maybe 4 bytes like display ID?)
+                            // Let's assume 1 byte for generic register read, or use 'freq' as length?
+                            // For simplicity, let's read 1 byte.
+                            
+                            // Dummy bit? Display ID has dummy bit. Generic SPI might not.
+                            // Let's assume standard SPI (no dummy bit) unless specified.
+                            
+                            uint8_t val = 0;
+                            for (int i = 0; i < 8; i++) {
+                                val <<= 1;
+                                digitalWrite(sclk, HIGH);
+                                if (miso >= 0 && digitalRead(miso)) val |= 1;
+                                digitalWrite(sclk, LOW);
+                            }
+                            
+                            digitalWrite(cs, HIGH);
+                            
+                            if ((val & test.mask) == test.expect) {
+                                pass = true;
+                            } else {
+                                if (_debug >= debug_verbose) Serial.printf("    SPI Cmd 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
+                            }
+                        }
+                    }
+                    break;
+            }
+            
+            if (pass) {
+                current_score += test.score;
+                if (_debug >= debug_verbose) Serial.printf("  [Pass] Additional Test %d (+%d)\r\n", test.type, test.score);
+            } else {
+                if (_debug >= debug_verbose) Serial.printf("  [Fail] Additional Test %d\r\n", test.type);
+            }
+        }
 
         if (_debug >= debug_verbose) {
             Serial.printf("  Total Score: %d\r\n", current_score);

@@ -121,6 +121,29 @@ class M5HeaderGenerator:
         content.append("    const char* pin_rst_str;")
         content.append("};")
         content.append("")
+
+        content.append("enum TestType {")
+        content.append("    TEST_GPIO_READ = 0,")
+        content.append("    TEST_I2C_READ_REG = 1,")
+        content.append("    TEST_SPI_READ_CMD = 2,")
+        content.append("};")
+        content.append("")
+
+        content.append("struct AdHocTest {")
+        content.append("    int type;")
+        content.append("    uint32_t score;")
+        content.append("    int port;")
+        content.append("    int pin_a;")
+        content.append("    int pin_b;")
+        content.append("    int pin_c;")
+        content.append("    int pin_d;")
+        content.append("    uint32_t freq;")
+        content.append("    uint32_t addr;")
+        content.append("    uint32_t reg;")
+        content.append("    uint32_t mask;")
+        content.append("    uint32_t expect;")
+        content.append("};")
+        content.append("")
         
         content.append("struct DeviceInfo {")
         content.append("    const char* name;")
@@ -133,6 +156,7 @@ class M5HeaderGenerator:
         content.append("    const std::vector<I2CIdentify> identify_i2c;")
         content.append("    const std::vector<DisplayConfig> displays;")
         content.append("    const std::vector<TouchConfig> touches;")
+        content.append("    const std::vector<AdHocTest> additional_tests;")
         content.append("};")
         content.append("")
         
@@ -259,8 +283,9 @@ class M5HeaderGenerator:
                         freq = i2c.get('freq', 400000)
                         detect = i2c.get('detect', [])
                         detect_count = i2c.get('detect_count', len(detect))
+                        internal_pullup = "true" if i2c.get('internal_pullup', False) else "false"
                         
-                        content.append(f"            {{ {port}, {sda}, {scl}, {freq}, {detect_count}, {{")
+                        content.append(f"            {{ {port}, {sda}, {scl}, {freq}, {detect_count}, {internal_pullup}, {{")
                         for d in detect:
                             addr = M5HeaderGenerator._parse_int(d.get('addr', 0))
                             content.append(f"                {{ 0x{addr:02X} }},")
@@ -338,6 +363,31 @@ class M5HeaderGenerator:
                         content.append(f'            {{ "{driver}", 0x{addr:02X}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("sda")}, {get_pin_val("scl")}, {get_pin_val("int")}, {get_pin_val("rst")}, '
                                     f'{get_pin_str("rst")} }},')
+                    content.append("        },")
+
+                    # Additional Tests
+                    variant_tests = variant.get('additional_tests')
+                    if variant_tests is None:
+                        additional_tests = dev.get('additional_tests', [])
+                    else:
+                        additional_tests = variant_tests
+                    
+                    content.append("        {")
+                    for test in additional_tests:
+                        t_type = test.get('type', 0)
+                        score = test.get('score', 1)
+                        port = test.get('port', 0)
+                        pin_a = test.get('pin_a', -1)
+                        pin_b = test.get('pin_b', -1)
+                        pin_c = test.get('pin_c', -1)
+                        pin_d = test.get('pin_d', -1)
+                        freq = test.get('freq', 0)
+                        addr = M5HeaderGenerator._parse_int(test.get('addr', 0))
+                        reg = M5HeaderGenerator._parse_int(test.get('reg', 0))
+                        mask = M5HeaderGenerator._parse_int(test.get('mask', 0))
+                        expect = M5HeaderGenerator._parse_int(test.get('expect', 0))
+                        
+                        content.append(f"            {{ {t_type}, {score}, {port}, {pin_a}, {pin_b}, {pin_c}, {pin_d}, {freq}, 0x{addr:02X}, 0x{reg:02X}, 0x{mask:02X}, 0x{expect:02X} }},")
                     content.append("        }")
                     
                     content.append("    },")

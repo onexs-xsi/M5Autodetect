@@ -49,6 +49,7 @@ struct I2CBusCheck {
     int scl;
     uint32_t freq;
     int detect_count;
+    bool internal_pullup; // Use internal pullup for I2C pins (if no external pullup)
     std::vector<I2CDetect> detect;
 };
 
@@ -94,6 +95,27 @@ struct TouchConfig {
     const char* pin_rst_str;
 };
 
+enum TestType {
+    TEST_GPIO_READ = 0,
+    TEST_I2C_READ_REG = 1,
+    TEST_SPI_READ_CMD = 2,
+};
+
+struct AdHocTest {
+    int type;
+    uint32_t score;
+    int port;
+    int pin_a;
+    int pin_b;
+    int pin_c;
+    int pin_d;
+    uint32_t freq;
+    uint32_t addr;
+    uint32_t reg;
+    uint32_t mask;
+    uint32_t expect;
+};
+
 struct DeviceInfo {
     const char* name;
     const char* sku;
@@ -105,6 +127,7 @@ struct DeviceInfo {
     const std::vector<I2CIdentify> identify_i2c;
     const std::vector<DisplayConfig> displays;
     const std::vector<TouchConfig> touches;
+    const std::vector<AdHocTest> additional_tests;
 };
 
 extern const std::vector<DeviceInfo> devices_data;
