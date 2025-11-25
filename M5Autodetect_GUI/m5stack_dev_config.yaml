@@ -215,18 +215,11 @@ mcu_categories:
     docs: https://docs.m5stack.com/zh_CN/core/ATOM%20Lite
     variants: []
     check_pins:
-      25:
+      39:
         mode: input
         expect: 1
-      21:
-        mode: input
-        expect: 1
-    i2c_internal:
-    - port: 0
-      sda: 25
-      scl: 21
-      freq: 400000
-      detect: []
+    i2c_internal: []
+    identify_i2c: []
     display: []
     touch: []
   - name: M5AtomMatrix

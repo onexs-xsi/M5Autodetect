@@ -73,6 +73,7 @@ class M5HeaderGenerator:
         content.append("    int scl;")
         content.append("    uint32_t freq;")
         content.append("    int detect_count;")
+        content.append("    bool internal_pullup;")
         content.append("    std::vector<I2CDetect> detect;")
         content.append("};")
         content.append("")

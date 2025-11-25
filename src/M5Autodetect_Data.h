@@ -49,7 +49,7 @@ struct I2CBusCheck {
     int scl;
     uint32_t freq;
     int detect_count;
-    bool internal_pullup; // Use internal pullup for I2C pins (if no external pullup)
+    bool internal_pullup;
     std::vector<I2CDetect> detect;
 };
 

@@ -15,7 +15,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 0, 0, 1 },
         },
         {
-            { 0, 45, 0, 400000, 2, {
+            { 0, 45, 0, 400000, 2, false, {
                 { 0x68 },
                 { 0x30 },
             } },
@@ -41,7 +41,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 0, 0, 1 },
         },
         {
-            { 0, 45, 0, 400000, 1, {
+            { 0, 45, 0, 400000, 1, false, {
                 { 0x18 },
             } },
         },
@@ -65,7 +65,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 39, 0, 1 },
         },
         {
-            { 0, 38, 39, 400000, 1, {
+            { 0, 38, 39, 400000, 1, false, {
                 { 0x68 },
             } },
         },
@@ -90,7 +90,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 39, 0, 1 },
         },
         {
-            { 0, 38, 39, 400000, 0, {
+            { 0, 38, 39, 400000, 0, false, {
             } },
         },
         {
@@ -113,7 +113,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 1, 0, 0 },
         },
         {
-            { 0, 29, 30, 400000, 2, {
+            { 0, 29, 30, 400000, 2, false, {
                 { 0x43 },
                 { 0x44 },
             } },
@@ -141,7 +141,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 1, 0, 0 },
         },
         {
-            { 0, 29, 30, 400000, 2, {
+            { 0, 29, 30, 400000, 2, false, {
                 { 0x43 },
                 { 0x44 },
             } },
@@ -163,14 +163,11 @@ const std::vector<DeviceInfo> devices_data = {
         "SKU:C008",
         "ESP32",
         board_M5AtomLite,
-        2,
+        1,
         {
-            { 25, 0, 1 },
-            { 21, 0, 1 },
+            { 39, 0, 1 },
         },
         {
-            { 0, 25, 21, 400000, 0, {
-            } },
         },
         {
         },
@@ -192,7 +189,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 21, 0, 1 },
         },
         {
-            { 0, 25, 21, 400000, 1, {
+            { 0, 25, 21, 400000, 1, false, {
                 { 0x68 },
             } },
         },

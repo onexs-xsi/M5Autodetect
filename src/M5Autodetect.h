@@ -2,6 +2,7 @@
 #define M5_AUTODETECT_H
 
 #include <stdint.h>
+#include <Print.h>
 #include "M5Autodetect_Bus.h"
 #include "M5Autodetect_Data.h"
 
@@ -16,10 +17,14 @@ public:
 private:
     const m5::autodetect::DeviceInfo* _device_info = nullptr;
     debug_t _debug = debug_none;
+    Print* _serial = nullptr;  // Pointer to output stream (Serial, Serial1, etc.)
 
 public:
     M5Autodetect();
-    void begin(debug_t debug = debug_none);
+    
+    // begin with optional serial output
+    void begin(debug_t debug = debug_none, Print* serial = nullptr);
+    
     const m5::autodetect::DeviceInfo* detect();
     
     const m5::autodetect::DeviceInfo* getDetectedInfo() const;
