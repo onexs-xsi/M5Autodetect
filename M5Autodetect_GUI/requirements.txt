@@ -1,0 +1,15 @@
+# M5Autodetect GUI 依赖库
+# Python >= 3.14
+
+# GUI 框架 - PyQt6
+PyQt6>=6.6.0
+
+# YAML 解析
+PyYAML>=6.0.1
+
+# HTTP 请求 (用于下载设备图片)
+requests>=2.31.0
+
+# 流程图可视化 (M5Flowchart_Demo.py)
+pyqtgraph>=0.13.3
+numpy>=1.26.0
