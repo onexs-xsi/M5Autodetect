@@ -3,6 +3,82 @@ import yaml
 import sys
 
 class M5HeaderGenerator:
+    # Test type mapping
+    TEST_TYPE_MAP = {
+        'gpio': 0,
+        'i2c': 1,
+        'spi': 2,
+        0: 0,
+        1: 1,
+        2: 2,
+    }
+
+    # Bus type mapping for display
+    BUS_TYPE_MAP = {
+        'spi': 0,
+        'i2c': 1,
+        'parallel8': 2,
+        'parallel16': 3,
+        'rgb': 4,
+        'dsi': 5,
+    }
+
+    @staticmethod
+    def _make_safe_name(base_name, suffix=''):
+        """Create a safe C++ identifier from device name and optional suffix"""
+        safe_name = base_name.replace(" ", "_").replace("-", "_").replace(".", "_").replace("(", "").replace(")", "")
+        if suffix:
+            safe_suffix = suffix.replace(" ", "_").replace("-", "_").replace(".", "_").replace("(", "").replace(")", "")
+            safe_name += "_" + safe_suffix
+        return safe_name
+
+    @staticmethod
+    def _get_test_type(val):
+        """Convert test type to integer"""
+        if isinstance(val, str):
+            return M5HeaderGenerator.TEST_TYPE_MAP.get(val.lower(), 0)
+        return M5HeaderGenerator.TEST_TYPE_MAP.get(val, 0)
+
+    @staticmethod
+    def _get_bus_type(val):
+        """Convert bus type to integer"""
+        if isinstance(val, str):
+            return M5HeaderGenerator.BUS_TYPE_MAP.get(val.lower(), 0)
+        return 0
+
+    @staticmethod
+    def _get_prereq_type(val):
+        """Convert prereq type to enum string"""
+        val = str(val).lower()
+        if val == 'gpio': return 'PrereqType::GPIO_WRITE'
+        if val == 'i2c_read': return 'PrereqType::I2C_READ'
+        if val == 'i2c_write': return 'PrereqType::I2C_WRITE'
+        if val == 'spi_read': return 'PrereqType::SPI_READ'
+        if val == 'spi_write': return 'PrereqType::SPI_WRITE'
+        return 'PrereqType::NONE'
+
+    @staticmethod
+    def _generate_prerequisites(prereq_list):
+        """Generate C++ code for prerequisites vector"""
+        if not prereq_list:
+            return "{}"
+        
+        lines = []
+        lines.append("{")
+        for p in prereq_list:
+            p_type = M5HeaderGenerator._get_prereq_type(p.get('type', ''))
+            gpio = M5HeaderGenerator._parse_int(p.get('gpio', -1))
+            level = M5HeaderGenerator._parse_int(p.get('level', 0))
+            addr = M5HeaderGenerator._parse_int(p.get('addr', 0))
+            reg = M5HeaderGenerator._parse_int(p.get('reg', 0))
+            cmd = M5HeaderGenerator._parse_int(p.get('cmd', 0))
+            data = M5HeaderGenerator._parse_int(p.get('data', 0))
+            length = M5HeaderGenerator._parse_int(p.get('len', 0))
+            
+            lines.append(f"            {{ {p_type}, {gpio}, {level}, 0x{addr:02X}, 0x{reg:02X}, 0x{cmd:02X}, 0x{data:02X}, {length} }},")
+        lines.append("        }")
+        return "\n".join(lines)
+
     @staticmethod
     def generate_header(data):
         mcu_categories = data.get('mcu_categories', [])
@@ -36,9 +112,7 @@ class M5HeaderGenerator:
                 
                 for variant in variants:
                     suffix = variant.get('name', '')
-                    safe_name = base_name.replace(" ", "_").replace("-", "_").replace(".", "_")
-                    if suffix:
-                        safe_name += "_" + suffix.replace(" ", "_").replace("-", "_").replace(".", "_")
+                    safe_name = M5HeaderGenerator._make_safe_name(base_name, suffix)
                     
                     all_devices.append(safe_name)
                     content.append(f"    board_{safe_name},")
@@ -62,6 +136,28 @@ class M5HeaderGenerator:
         content.append("};")
         content.append("")
         
+        content.append("enum class PrereqType {")
+        content.append("    NONE = 0,")
+        content.append("    GPIO_WRITE = 1,")
+        content.append("    I2C_READ = 2,")
+        content.append("    I2C_WRITE = 3,")
+        content.append("    SPI_READ = 4,")
+        content.append("    SPI_WRITE = 5")
+        content.append("};")
+        content.append("")
+
+        content.append("struct Prerequisite {")
+        content.append("    PrereqType type;")
+        content.append("    int gpio;")
+        content.append("    int level;")
+        content.append("    uint8_t addr;")
+        content.append("    uint8_t reg;")
+        content.append("    uint8_t cmd;")
+        content.append("    uint8_t data;")
+        content.append("    int len;")
+        content.append("};")
+        content.append("")
+
         content.append("struct I2CDetect {")
         content.append("    uint8_t addr;")
         content.append("};")
@@ -75,6 +171,7 @@ class M5HeaderGenerator:
         content.append("    int detect_count;")
         content.append("    bool internal_pullup;")
         content.append("    std::vector<I2CDetect> detect;")
+        content.append("    std::vector<Prerequisite> prerequisites;")
         content.append("};")
         content.append("")
 
@@ -87,18 +184,30 @@ class M5HeaderGenerator:
         content.append("};")
         content.append("")
 
+        content.append("enum class DisplayBusType {")
+        content.append("    BUS_SPI = 0,")
+        content.append("    BUS_I2C = 1,")
+        content.append("    BUS_PARALLEL8 = 2,")
+        content.append("    BUS_PARALLEL16 = 3,")
+        content.append("    BUS_RGB = 4,")
+        content.append("    BUS_DSI = 5,")
+        content.append("};")
+        content.append("")
+
         content.append("struct DisplayConfig {")
         content.append("    const char* driver;")
+        content.append("    int bus_type;")
         content.append("    int width;")
         content.append("    int height;")
         content.append("    int freq;")
-        content.append("    int pin_mosi;")
-        content.append("    int pin_miso;")
-        content.append("    int pin_sclk;")
+        content.append("    int pin_mosi;  // or d0 for parallel")
+        content.append("    int pin_miso;  // or d1 for parallel")
+        content.append("    int pin_sclk;  // or wr for parallel")
         content.append("    int pin_cs;")
-        content.append("    int pin_dc;")
+        content.append("    int pin_dc;    // or rs for parallel")
         content.append("    int pin_rst;")
         content.append("    int pin_bl;")
+        content.append("    uint8_t i2c_addr;")
         content.append("    const char* pin_rst_str;")
         content.append("    const char* pin_bl_str;")
         content.append("    int identify_cmd;")
@@ -106,6 +215,7 @@ class M5HeaderGenerator:
         content.append("    int identify_mask;")
         content.append("    bool identify_rst_before;")
         content.append("    int identify_rst_wait;")
+        content.append("    std::vector<Prerequisite> prerequisites;")
         content.append("};")
         content.append("")
 
@@ -120,6 +230,7 @@ class M5HeaderGenerator:
         content.append("    int pin_int;")
         content.append("    int pin_rst;")
         content.append("    const char* pin_rst_str;")
+        content.append("    std::vector<Prerequisite> prerequisites;")
         content.append("};")
         content.append("")
 
@@ -132,7 +243,7 @@ class M5HeaderGenerator:
 
         content.append("struct AdHocTest {")
         content.append("    int type;")
-        content.append("    uint32_t score;")
+        content.append("    int32_t score;")
         content.append("    int port;")
         content.append("    int pin_a;")
         content.append("    int pin_b;")
@@ -151,6 +262,7 @@ class M5HeaderGenerator:
         content.append("    const char* sku;")
         content.append("    const char* mcu;")
         content.append("    board_t board_id;")
+        content.append("    bool psram_enabled;")
         content.append("    int check_pins_count;")
         content.append("    const std::vector<PinCheck> check_pins;")
         content.append("    const std::vector<I2CBusCheck> i2c_checks;")
@@ -178,7 +290,10 @@ class M5HeaderGenerator:
             val = val.strip()
             if val.lower().startswith('0x'):
                 return int(val, 16)
-            return int(val)
+            try:
+                return int(val)
+            except ValueError:
+                return 0
         return 0
 
     @staticmethod
@@ -206,9 +321,21 @@ class M5HeaderGenerator:
                 if not isinstance(base_identify_i2c, list):
                     base_identify_i2c = []
                 
+                base_additional_tests = dev.get('additional_tests', [])
+                if not isinstance(base_additional_tests, list):
+                    base_additional_tests = []
+
+                base_psram = bool(dev.get('psram_enabled', False))
+                
                 # If no variants, treat as single device
                 if not variants:
-                    variants = [{'name': '', 'display': dev.get('display', []), 'touch': dev.get('touch', []), 'identify_i2c': base_identify_i2c}]
+                    variants = [{
+                        'name': '',
+                        'display': dev.get('display', []),
+                        'touch': dev.get('touch', []),
+                        'identify_i2c': base_identify_i2c,
+                        'additional_tests': base_additional_tests
+                    }]
                 
                 for variant in variants:
                     suffix = variant.get('name', '')
@@ -218,11 +345,33 @@ class M5HeaderGenerator:
                     
                     sku = dev.get('sku', 'Unknown')
                     
-                    safe_name = base_name.replace(" ", "_").replace("-", "_").replace(".", "_")
-                    if suffix:
-                        safe_name += "_" + suffix.replace(" ", "_").replace("-", "_").replace(".", "_")
+                    safe_name = M5HeaderGenerator._make_safe_name(base_name, suffix)
                     
-                    pins = dev.get('check_pins', [])
+                    # Helper function: variant value takes priority, but if variant value is empty, use base value
+                    def get_with_fallback(variant_val, base_val, empty_check=None):
+                        """
+                        Variant value takes priority over base value.
+                        If variant value is None or empty (based on empty_check), use base value.
+                        """
+                        if variant_val is None:
+                            return base_val
+                        if empty_check is not None and empty_check(variant_val):
+                            return base_val
+                        return variant_val
+                    
+                    def is_empty_list(val):
+                        return isinstance(val, list) and len(val) == 0
+                    
+                    def is_empty_dict(val):
+                        return isinstance(val, dict) and len(val) == 0
+                    
+                    def is_empty_list_or_dict(val):
+                        return is_empty_list(val) or is_empty_dict(val)
+                    
+                    # Check pins - variant can override, empty falls back to base
+                    base_pins = dev.get('check_pins', {})
+                    variant_pins = variant.get('check_pins')
+                    pins = get_with_fallback(variant_pins, base_pins, is_empty_list_or_dict)
                     
                     # Calculate default check_pins_count
                     pin_count = 0
@@ -230,23 +379,52 @@ class M5HeaderGenerator:
                         pin_count = len(pins)
                     elif isinstance(pins, dict):
                         pin_count = len(pins)
-                        
-                    check_pins_count = dev.get('check_pins_count', pin_count)
-
-                    i2c_internal = dev.get('i2c_internal', [])
-                    displays = variant.get('display', [])
-                    touches = variant.get('touch', [])
-                    variant_identify = variant.get('identify_i2c')
-                    if variant_identify is None:
-                        identify_i2c = base_identify_i2c
+                    
+                    # Check pins count - variant can override
+                    base_pins_count = dev.get('check_pins_count', pin_count)
+                    variant_pins_count = variant.get('check_pins_count')
+                    if variant_pins_count is not None:
+                        check_pins_count = variant_pins_count
                     else:
-                        identify_i2c = variant_identify
+                        # Recalculate if pins were overridden
+                        if variant_pins is not None and not is_empty_list_or_dict(variant_pins):
+                            check_pins_count = pin_count
+                        else:
+                            check_pins_count = base_pins_count
+
+                    # I2C Internal - variant can override, empty falls back to base
+                    base_i2c_internal = dev.get('i2c_internal', [])
+                    variant_i2c = variant.get('i2c_internal')
+                    i2c_internal = get_with_fallback(variant_i2c, base_i2c_internal, is_empty_list)
+
+                    # Displays - variant can override, empty falls back to base
+                    base_displays = dev.get('display', [])
+                    variant_display = variant.get('display')
+                    displays = get_with_fallback(variant_display, base_displays, is_empty_list)
+                    
+                    # Touches - variant can override, empty falls back to base
+                    base_touches = dev.get('touch', [])
+                    variant_touch = variant.get('touch')
+                    touches = get_with_fallback(variant_touch, base_touches, is_empty_list)
+                    
+                    # Identify I2C - variant can override, empty falls back to base
+                    variant_identify = variant.get('identify_i2c')
+                    identify_i2c = get_with_fallback(variant_identify, base_identify_i2c, is_empty_list)
+
+                    # Additional Tests - variant can override, empty falls back to base
+                    variant_tests = variant.get('additional_tests')
+                    additional_tests = get_with_fallback(variant_tests, base_additional_tests, is_empty_list)
+
+                    # PSRAM - variant can override (None falls back to base)
+                    variant_psram = variant.get('psram_enabled')
+                    psram_enabled = variant_psram if variant_psram is not None else base_psram
                     
                     content.append("    {")
                     content.append(f'        "{name}",')
                     content.append(f'        "{sku}",')
                     content.append(f'        "{mcu}",')
                     content.append(f'        board_{safe_name},')
+                    content.append(f'        {"true" if psram_enabled else "false"},')
                     content.append(f'        {check_pins_count},')
                     content.append("        {")
                     
@@ -285,12 +463,14 @@ class M5HeaderGenerator:
                         detect = i2c.get('detect', [])
                         detect_count = i2c.get('detect_count', len(detect))
                         internal_pullup = "true" if i2c.get('internal_pullup', False) else "false"
+                        prereqs = i2c.get('prerequisites', [])
+                        prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
                         
                         content.append(f"            {{ {port}, {sda}, {scl}, {freq}, {detect_count}, {internal_pullup}, {{")
                         for d in detect:
                             addr = M5HeaderGenerator._parse_int(d.get('addr', 0))
                             content.append(f"                {{ 0x{addr:02X} }},")
-                        content.append("            } },")
+                        content.append(f"            }}, {prereq_str} }},")
                     content.append("        },")
 
                     # Identify I2C
@@ -308,10 +488,12 @@ class M5HeaderGenerator:
                     content.append("        {")
                     for disp in displays:
                         driver = disp.get('driver', '')
+                        bus_type = M5HeaderGenerator._get_bus_type(disp.get('bus_type', 'spi'))
                         width = disp.get('width', 0)
                         height = disp.get('height', 0)
                         freq = disp.get('freq', 0)
                         d_pins = disp.get('pins', {})
+                        i2c_addr = M5HeaderGenerator._parse_int(disp.get('addr', 0))
                         
                         def get_pin_val(p_name):
                             val = d_pins.get(p_name, -1)
@@ -332,11 +514,15 @@ class M5HeaderGenerator:
                         id_rst_before = "true" if identify.get('rst_before', False) else "false"
                         id_rst_wait = M5HeaderGenerator._parse_int(identify.get('rst_wait', 0))
 
-                        content.append(f'            {{ "{driver}", {width}, {height}, {freq}, '
+                        prereqs = disp.get('prerequisites', [])
+                        prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
+
+                        content.append(f'            {{ "{driver}", {bus_type}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("mosi")}, {get_pin_val("miso")}, {get_pin_val("sclk")}, '
                                     f'{get_pin_val("cs")}, {get_pin_val("dc")}, {get_pin_val("rst")}, {get_pin_val("bl")}, '
+                                    f'0x{i2c_addr:02X}, '
                                     f'{get_pin_str("rst")}, {get_pin_str("bl")}, '
-                                    f'{id_cmd}, {id_expect}, {id_mask}, {id_rst_before}, {id_rst_wait} }},')
+                                    f'{id_cmd}, {id_expect}, {id_mask}, {id_rst_before}, {id_rst_wait}, {prereq_str} }},')
                     content.append("        },")
 
                     # Touches
@@ -361,22 +547,21 @@ class M5HeaderGenerator:
                                 return f'"{val}"'
                             return "nullptr"
 
+                        prereqs = touch.get('prerequisites', [])
+                        prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
+
                         content.append(f'            {{ "{driver}", 0x{addr:02X}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("sda")}, {get_pin_val("scl")}, {get_pin_val("int")}, {get_pin_val("rst")}, '
-                                    f'{get_pin_str("rst")} }},')
+                                    f'{get_pin_str("rst")}, {prereq_str} }},')
                     content.append("        },")
 
                     # Additional Tests
-                    variant_tests = variant.get('additional_tests')
-                    if variant_tests is None:
-                        additional_tests = dev.get('additional_tests', [])
-                    else:
-                        additional_tests = variant_tests
-                    
                     content.append("        {")
                     for test in additional_tests:
-                        t_type = test.get('type', 0)
-                        score = test.get('score', 1)
+                        t_type = M5HeaderGenerator._get_test_type(test.get('type', 0))
+                        score = M5HeaderGenerator._parse_int(test.get('score', 1))
+                        
+                        # Common fields with different meanings per type
                         port = test.get('port', 0)
                         pin_a = test.get('pin_a', -1)
                         pin_b = test.get('pin_b', -1)
@@ -435,6 +620,8 @@ class M5HeaderGenerator:
             return M5HeaderGenerator.generate_from_data(data, output_path)
         except Exception as e:
             print(f"Error generating files: {e}")
+            import traceback
+            traceback.print_exc()
             return False
 
 if __name__ == "__main__":

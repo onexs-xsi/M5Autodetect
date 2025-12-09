@@ -39,6 +39,26 @@ struct PinCheck {
     int expect; // 0 or 1
 };
 
+enum class PrereqType {
+    NONE = 0,
+    GPIO_WRITE = 1,
+    I2C_READ = 2,
+    I2C_WRITE = 3,
+    SPI_READ = 4,
+    SPI_WRITE = 5
+};
+
+struct Prerequisite {
+    PrereqType type;
+    int gpio;
+    int level;
+    uint8_t addr;
+    uint8_t reg;
+    uint8_t cmd;
+    uint8_t data;
+    int len;
+};
+
 struct I2CDetect {
     uint8_t addr;
 };
@@ -51,6 +71,7 @@ struct I2CBusCheck {
     int detect_count;
     bool internal_pullup;
     std::vector<I2CDetect> detect;
+    std::vector<Prerequisite> prerequisites;
 };
 
 struct I2CIdentify {
@@ -61,18 +82,29 @@ struct I2CIdentify {
     uint8_t addr;
 };
 
+enum class DisplayBusType {
+    BUS_SPI = 0,
+    BUS_I2C = 1,
+    BUS_PARALLEL8 = 2,
+    BUS_PARALLEL16 = 3,
+    BUS_RGB = 4,
+    BUS_DSI = 5,
+};
+
 struct DisplayConfig {
     const char* driver;
+    int bus_type;
     int width;
     int height;
     int freq;
-    int pin_mosi;
-    int pin_miso;
-    int pin_sclk;
+    int pin_mosi;  // or d0 for parallel
+    int pin_miso;  // or d1 for parallel
+    int pin_sclk;  // or wr for parallel
     int pin_cs;
-    int pin_dc;
+    int pin_dc;    // or rs for parallel
     int pin_rst;
     int pin_bl;
+    uint8_t i2c_addr;
     const char* pin_rst_str;
     const char* pin_bl_str;
     int identify_cmd;
@@ -80,6 +112,7 @@ struct DisplayConfig {
     int identify_mask;
     bool identify_rst_before;
     int identify_rst_wait;
+    std::vector<Prerequisite> prerequisites;
 };
 
 struct TouchConfig {
@@ -93,6 +126,7 @@ struct TouchConfig {
     int pin_int;
     int pin_rst;
     const char* pin_rst_str;
+    std::vector<Prerequisite> prerequisites;
 };
 
 enum TestType {
@@ -103,7 +137,7 @@ enum TestType {
 
 struct AdHocTest {
     int type;
-    uint32_t score;
+    int32_t score;
     int port;
     int pin_a;
     int pin_b;
@@ -121,6 +155,7 @@ struct DeviceInfo {
     const char* sku;
     const char* mcu;
     board_t board_id;
+    bool psram_enabled;
     int check_pins_count;
     const std::vector<PinCheck> check_pins;
     const std::vector<I2CBusCheck> i2c_checks;

@@ -2,10 +2,40 @@
 #include "M5Autodetect_Data.h"
 #include <Arduino.h>
 #include <Wire.h>
+#include <esp32-hal-psram.h>
 
 // Helper macro for debug printing (only prints if _serial is set)
 #define DBG_PRINT(fmt, ...) do { if (_serial) _serial->print(fmt); } while(0)
 #define DBG_PRINTF(fmt, ...) do { if (_serial) _serial->printf(fmt, ##__VA_ARGS__); } while(0)
+
+// Keep chip family distinctions so ESP32-P4 不会被误判成经典 ESP32。
+enum class ChipKind {
+    Unknown,
+    Esp32,
+    Esp32S2,
+    Esp32S3,
+    Esp32C2,
+    Esp32C3,
+    Esp32C5,
+    Esp32C6,
+    Esp32C61,
+    Esp32H2,
+    Esp32P4,
+};
+
+static ChipKind detectChipKind(const String& chip) {
+    if (chip.indexOf("ESP32-S3") != -1) return ChipKind::Esp32S3;
+    if (chip.indexOf("ESP32-S2") != -1) return ChipKind::Esp32S2;
+    if (chip.indexOf("ESP32-C61") != -1) return ChipKind::Esp32C61;
+    if (chip.indexOf("ESP32-C6") != -1) return ChipKind::Esp32C6;
+    if (chip.indexOf("ESP32-C5") != -1) return ChipKind::Esp32C5;
+    if (chip.indexOf("ESP32-C3") != -1) return ChipKind::Esp32C3;
+    if (chip.indexOf("ESP32-C2") != -1) return ChipKind::Esp32C2;
+    if (chip.indexOf("ESP32-H2") != -1 || chip.indexOf("ESP32-H4") != -1) return ChipKind::Esp32H2;
+    if (chip.indexOf("ESP32-P4") != -1) return ChipKind::Esp32P4;
+    if (chip.indexOf("ESP32") != -1) return ChipKind::Esp32;
+    return ChipKind::Unknown;
+}
 
 // Helper for bit-banging SPI to read display ID
 static uint32_t readDisplayID(const m5::autodetect::DisplayConfig& disp) {
@@ -96,8 +126,83 @@ void M5Autodetect::begin(debug_t debug, Print* serial) {
     _serial = serial;
 }
 
+static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& prereqs, 
+                             int pin_sda, int pin_scl, 
+                             int pin_mosi, int pin_miso, int pin_sclk, int pin_cs,
+                             uint32_t freq, int i2c_port = 0) {
+    for (const auto& p : prereqs) {
+        if (p.type == m5::autodetect::PrereqType::GPIO_WRITE) {
+            if (p.gpio >= 0) {
+                pinMode(p.gpio, OUTPUT);
+                digitalWrite(p.gpio, p.level ? HIGH : LOW);
+                delay(10);
+            }
+        }
+        else if (p.type == m5::autodetect::PrereqType::I2C_WRITE || p.type == m5::autodetect::PrereqType::I2C_READ) {
+            if (pin_sda >= 0 && pin_scl >= 0) {
+                TwoWire i2c(i2c_port);
+                i2c.begin(pin_sda, pin_scl, freq);
+                i2c.beginTransmission(p.addr);
+                i2c.write(p.reg);
+                if (p.type == m5::autodetect::PrereqType::I2C_WRITE) {
+                    i2c.write(p.data);
+                    i2c.endTransmission();
+                } else {
+                    i2c.endTransmission(false);
+                    i2c.requestFrom((int)p.addr, (int)p.len > 0 ? (int)p.len : 1);
+                    while(i2c.available()) i2c.read();
+                }
+                delay(10);
+            }
+        }
+        else if (p.type == m5::autodetect::PrereqType::SPI_WRITE || p.type == m5::autodetect::PrereqType::SPI_READ) {
+            if (pin_mosi >= 0 && pin_sclk >= 0 && pin_cs >= 0) {
+                pinMode(pin_cs, OUTPUT);
+                pinMode(pin_sclk, OUTPUT);
+                pinMode(pin_mosi, OUTPUT);
+                if (pin_miso >= 0) pinMode(pin_miso, INPUT);
+                
+                digitalWrite(pin_cs, HIGH);
+                digitalWrite(pin_sclk, LOW);
+                
+                digitalWrite(pin_cs, LOW);
+                
+                auto spi_write = [&](uint8_t b) {
+                    for (int i = 0; i < 8; i++) {
+                        digitalWrite(pin_mosi, (b & 0x80) ? HIGH : LOW);
+                        digitalWrite(pin_sclk, HIGH);
+                        digitalWrite(pin_sclk, LOW);
+                        b <<= 1;
+                    }
+                };
+                
+                spi_write(p.cmd);
+                
+                if (p.type == m5::autodetect::PrereqType::SPI_WRITE) {
+                    spi_write(p.data);
+                } else {
+                    int len = (p.len > 0) ? p.len : 1;
+                    for (int j=0; j<len; j++) {
+                        uint8_t val = 0;
+                        for (int i = 0; i < 8; i++) {
+                            val <<= 1;
+                            digitalWrite(pin_sclk, HIGH);
+                            if (pin_miso >= 0 && digitalRead(pin_miso)) val |= 1;
+                            digitalWrite(pin_sclk, LOW);
+                        }
+                    }
+                }
+                
+                digitalWrite(pin_cs, HIGH);
+                delay(10);
+            }
+        }
+    }
+}
+
 const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
     String chipModel = ESP.getChipModel();
+    const ChipKind chipKind = detectChipKind(chipModel);
     const m5::autodetect::DeviceInfo* best_device = nullptr;
     int max_score = -1;
     int min_skip_count = 999;  // Lower is better (fewer skips = higher priority)
@@ -119,13 +224,32 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             DBG_PRINTF("Checking: %s (%s)\r\n", device.name, device.sku);
         }
 
-        // 1. SOC
-        if (chipModel.indexOf(device.mcu) != -1) {
+        // 1. SOC（严格按家族匹配，避免 ESP32-P4 命中经典 ESP32 条目）
+        const ChipKind deviceKind = detectChipKind(String(device.mcu));
+        bool soc_match = false;
+        if (chipKind != ChipKind::Unknown && deviceKind != ChipKind::Unknown) {
+            soc_match = (chipKind == deviceKind);
+        } else {
+            // Fallback: substring match for未知型号
+            soc_match = (chipModel.indexOf(device.mcu) != -1);
+        }
+
+        if (soc_match) {
             current_score++;
             if (_debug >= debug_verbose) DBG_PRINT("  [Pass] SOC Match (+1)\r\n");
         } else {
             if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] SOC Mismatch (Expected: %s, Got: %s)\r\n", device.mcu, chipModel.c_str());
             continue;  // SOC mismatch, skip this device entirely
+        }
+
+        // 1.5 PSRAM check (if device requires PSRAM, verify it's present)
+        bool psram_detected = psramFound() || ESP.getPsramSize() > 0;
+        if (device.psram_enabled && !psram_detected) {
+            if (_debug >= debug_verbose) DBG_PRINT("  [Fail] PSRAM Required but not detected\r\n");
+            continue;  // Device requires PSRAM but not present
+        } else if (device.psram_enabled && psram_detected) {
+            current_score++;  // Bonus for matching PSRAM requirement
+            if (_debug >= debug_verbose) DBG_PRINT("  [Pass] PSRAM Match (+1)\r\n");
         }
 
         // 2. IOMAP
@@ -209,7 +333,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             }
         }
 
-        // 4. I2C MAP (Communication Test)
+        // 3. I2C MAP (Communication Test)
         if (!step_failed) {
             bool i2c_comm_match = true;
             int i2c_device_found_count = 0;
@@ -218,6 +342,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             
             // Check devices on i2c_checks buses
             for (const auto& i2c_bus : device.i2c_checks) {
+                runPrerequisites(i2c_bus.prerequisites, i2c_bus.sda, i2c_bus.scl, -1, -1, -1, -1, i2c_bus.freq, i2c_bus.port);
                 TwoWire i2c(i2c_bus.port);
                 i2c.begin(i2c_bus.sda, i2c_bus.scl, i2c_bus.freq);
                 
@@ -281,37 +406,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             }
         }
 
-        // 5. Screen parameters
-        if (!step_failed) {
-            bool screen_checked = false;
-            bool screen_matched = false;
-            for (const auto& disp : device.displays) {
-                if (disp.identify_cmd >= 0) {
-                    screen_checked = true;
-                    uint32_t id = readDisplayID(disp);
-                    uint32_t mask = (disp.identify_mask == -1) ? 0xFFFFFFFF : (uint32_t)disp.identify_mask;
-                    uint32_t expect = (uint32_t)disp.identify_expect;
-                    
-                    if ((id & mask) == expect) {
-                        screen_matched = true;
-                        current_score++;
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
-                    } else {
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
-                    }
-                }
-            }
-            
-            if (screen_checked && !screen_matched) {
-                step_failed = true;
-            } else if (!screen_checked) {
-                current_score++;  // No screen to check, give point
-                skip_count++;     // But count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Screen ID to check (+1)\r\n");
-            }
-        }
-
-        // 6. Additional Tests
+        // 4. Additional Tests
         if (!step_failed) {
             bool additional_test_failed = false;
             for (const auto& test : device.additional_tests) {
@@ -414,7 +509,83 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 skip_count++;     // Count as skip (lower priority)
                 if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Additional Tests (+1)\r\n");
             }
-        }  // end of if (!step_failed) for Step 6
+        }
+
+        // 5. Touch Detection (I2C based touch panels)
+        if (!step_failed) {
+            bool touch_checked = false;
+            bool touch_matched = false;
+            
+            for (const auto& touch : device.touches) {
+                runPrerequisites(touch.prerequisites, touch.pin_sda, touch.pin_scl, -1, -1, -1, -1, touch.freq);
+                if (touch.addr > 0 && touch.pin_sda >= 0 && touch.pin_scl >= 0) {
+                    touch_checked = true;
+                    
+                    TwoWire i2c(0);  // Use I2C port 0 for touch
+                    int freq = (touch.freq > 0) ? touch.freq : 400000;
+                    i2c.begin(touch.pin_sda, touch.pin_scl, freq);
+                    
+                    i2c.beginTransmission(touch.addr);
+                    if (i2c.endTransmission() == 0) {
+                        touch_matched = true;
+                        current_score++;
+                        if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Touch I2C Match (+1) (addr: 0x%02X)\r\n", touch.addr);
+                    } else {
+                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Touch I2C Failed (addr: 0x%02X)\r\n", touch.addr);
+                    }
+                    break;  // Only check first touch config
+                }
+            }
+            
+            if (touch_checked && !touch_matched) {
+                step_failed = true;
+            } else if (!touch_checked) {
+                current_score++;  // No touch to check, give point
+                skip_count++;     // But count as skip (lower priority)
+                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Touch to check (+1)\r\n");
+            }
+        }
+
+        // 6. Screen parameters (only check SPI-bus displays with identify_cmd)
+        if (!step_failed) {
+            bool screen_checked = false;
+            bool screen_matched = false;
+            for (const auto& disp : device.displays) {
+                if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
+                    runPrerequisites(disp.prerequisites, -1, -1, disp.pin_mosi, disp.pin_miso, disp.pin_sclk, disp.pin_cs, disp.freq);
+                }
+                if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI) && disp.identify_cmd >= 0) {
+                    screen_checked = true;
+                    uint32_t id = readDisplayID(disp);
+                    uint32_t mask = (disp.identify_mask == -1) ? 0xFFFFFFFF : (uint32_t)disp.identify_mask;
+                    uint32_t expect = (uint32_t)disp.identify_expect;
+                    
+                    if ((id & mask) == expect) {
+                        screen_matched = true;
+                        current_score++;
+                        if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
+                    } else {
+                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
+                    }
+                } else if (disp.bus_type != static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
+                    // For non-SPI displays we don't have an ID probe path yet; treat as skip
+                    skip_count++;
+                }
+            }
+            
+            if (screen_checked && !screen_matched) {
+                step_failed = true;
+            } else if (!screen_checked) {
+                current_score++;  // No screen to check, give point
+                skip_count++;     // But count as skip (lower priority)
+                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Screen ID to check (+1)\r\n");
+            }
+        }
+
+        if (step_failed) {
+            if (_debug >= debug_verbose) DBG_PRINT("  [Result] Failed at some step. Discarding.\r\n");
+            continue;
+        }
 
         if (_debug >= debug_verbose) {
             DBG_PRINTF("  Total Score: %d (Skips: %d)\r\n", current_score, skip_count);
@@ -434,6 +605,8 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         DBG_PRINT("=== Detection Result ===\r\n");
         if (best_device) {
             DBG_PRINTF("Best Match: %s (Score: %d, Skips: %d)\r\n", best_device->name, max_score, min_skip_count);
+            DBG_PRINTF("Board ID: %d (%s)\r\n", best_device->board_id, m5::autodetect::getBoardName(best_device->board_id));
+            DBG_PRINTF("SKU: %s\r\n", best_device->sku);
         } else {
             DBG_PRINT("No matching device found.\r\n");
         }
@@ -446,6 +619,20 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
 const m5::autodetect::DeviceInfo* M5Autodetect::getDetectedInfo() const {
     return _device_info;
+}
+
+m5::autodetect::board_t M5Autodetect::getBoard() const {
+    if (_device_info) {
+        return _device_info->board_id;
+    }
+    return m5::autodetect::board_unknown;
+}
+
+const char* M5Autodetect::getBoardName() const {
+    if (_device_info) {
+        return m5::autodetect::getBoardName(_device_info->board_id);
+    }
+    return "Unknown";
 }
 
 m5::autodetect::Bus* M5Autodetect::createBus(const m5::autodetect::BusConfig& config) {

@@ -33,6 +33,7 @@ struct BusConfig {
             int scl;
             uint32_t freq;
             uint8_t addr;
+            bool internal_pullup;
         } i2c;
         struct {
             int host_id;

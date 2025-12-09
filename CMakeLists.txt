@@ -1,2 +1,9 @@
-idf_component_register(SRCS "src/M5Autodetect.cpp"
-                       INCLUDE_DIRS "src")
+idf_component_register(
+    SRCS
+        "src/M5Autodetect.cpp"
+        "src/M5Autodetect_Bus.cpp"
+        "src/M5Autodetect_Data.cpp"
+        "src/M5Autodetect_SlefCheck.cpp"
+    INCLUDE_DIRS
+        "src"
+)

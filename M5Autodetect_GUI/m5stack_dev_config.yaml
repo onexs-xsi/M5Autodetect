@@ -133,78 +133,197 @@ mcu_categories:
     touch: []
 - mcu: ESP32-P4
   devices:
-  - name: M5Tab5
+  - additional_tests: []
+    check_pins: {}
     description: M5Stack Tab5
-    sku: SKU:C145/K145
-    eol: SALE
-    image: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1132/C145_02.webp
-    docs: https://docs.m5stack.com/zh_CN/core/Tab5
-    variants:
-    - name: ST7123
-      identify_i2c:
-      - port: 0
-        sda: 29
-        scl: 30
-        freq: 400000
-        addr: 85
-      display:
-      - driver: st7123
-        width: 1280
-        height: 720
-        freq: 0
-        pins: {}
-      touch:
-      - driver: st7123
-        addr: 85
-        width: 0
-        height: 0
-        pins:
-          sda: 31
-          scl: 32
-          int: 23
-          rst: PI4IOE5V6408(0x43) Bit5
-    - name: IlI9881c
-      identify_i2c:
-      - port: 0
-        sda: 29
-        scl: 30
-        freq: 400000
-        addr: 20
-      display:
-      - driver: ili9881c
-        width: 1280
-        height: 720
-        freq: 0
-        pins: {}
-      touch:
-      - driver: gt911
-        addr: 20
-        width: 0
-        height: 0
-        pins:
-          sda: 31
-          scl: 32
-          int: 23
-          rst: PI4IOE5V6408(0x43) Bit5
-    check_pins:
-      2:
-        mode: input
-        expect: 1
-      1:
-        mode: input
-        expect: 0
-    i2c_internal:
-    - port: 0
-      sda: 29
-      scl: 30
-      freq: 400000
-      detect:
-      - name: PI4IOE5V6408_1
-        addr: 67
-      - name: PI4IOE5V6408_2
-        addr: 68
     display: []
+    docs: https://docs.m5stack.com/zh_CN/core/Tab5
+    eol: SALE
+    i2c_internal: []
+    identify_i2c: []
+    image: https://m5stack-doc.oss-cn-shenzhen.aliyuncs.com/1132/C145_02.webp
+    mac: ''
+    mcu: ESP32-P4
+    name: M5Tab5
+    psram_enabled: true
+    sku: SKU:C145/K145
+    tests: []
     touch: []
+    variants:
+    - additional_tests: []
+      check_pins:
+        21:
+          mode: input
+          expect: 1
+        23:
+          mode: input
+          expect: 1
+        29:
+          mode: input
+          expect: 1
+        31:
+          mode: input
+          expect: 1
+        32:
+          mode: input
+          expect: 1
+        33:
+          mode: input
+          expect: 1
+        39:
+          mode: input
+          expect: 1
+        40:
+          mode: input
+          expect: 1
+        41:
+          mode: input
+          expect: 1
+        42:
+          mode: input
+          expect: 1
+        43:
+          mode: input
+          expect: 1
+        44:
+          mode: input
+          expect: 1
+      description: ''
+      display: []
+      docs: ''
+      eol: ''
+      i2c_internal:
+      - detect:
+        - addr: 16
+          name: Unknown_0x10
+        - addr: 50
+          name: Unknown_0x32
+        - addr: 64
+          name: Unknown_0x40
+        - addr: 65
+          name: Unknown_0x41
+        - addr: 67
+          name: Unknown_0x43
+        - addr: 68
+          name: Unknown_0x44
+        - addr: 104
+          name: Unknown_0x68
+        - addr: 85
+          name: Unknown_0x55
+        detect_count: 8
+        freq: 400000
+        port: 0
+        prerequisites:
+        - addr: 67
+          data: 48
+          reg: 3
+          type: i2c_write
+        - addr: 67
+          data: 48
+          reg: 5
+          type: i2c_write
+        - addr: 67
+          data: 0
+          reg: 7
+          type: i2c_write
+        scl: 32
+        sda: 31
+      identify_i2c: []
+      image: ''
+      mac: ''
+      mcu: ESP32-P4
+      name: ST7123
+      psram_enabled: false
+      sku: ''
+      tests: []
+      touch: []
+    - additional_tests: []
+      check_pins:
+        21:
+          mode: input
+          expect: 1
+        23:
+          mode: input
+          expect: 1
+        29:
+          mode: input
+          expect: 1
+        31:
+          mode: input
+          expect: 1
+        32:
+          mode: input
+          expect: 1
+        33:
+          mode: input
+          expect: 1
+        39:
+          mode: input
+          expect: 1
+        40:
+          mode: input
+          expect: 1
+        41:
+          mode: input
+          expect: 1
+        42:
+          mode: input
+          expect: 1
+        43:
+          mode: input
+          expect: 1
+        44:
+          mode: input
+          expect: 1
+      description: ''
+      display: []
+      docs: ''
+      eol: ''
+      i2c_internal:
+      - port: 0
+        sda: 31
+        scl: 32
+        freq: 400000
+        detect:
+        - name: Unknown_0x10
+          addr: 16
+        - name: Unknown_0x32
+          addr: 50
+        - name: Unknown_0x40
+          addr: 64
+        - name: Unknown_0x41
+          addr: 65
+        - name: Unknown_0x43
+          addr: 67
+        - name: Unknown_0x44
+          addr: 68
+        - name: Unknown_0x68
+          addr: 104
+        - name: Unknown_0x14
+          addr: 20
+        detect_count: 8
+        prerequisites:
+        - type: i2c_write
+          addr: 67
+          reg: 3
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 7
+          data: 0
+      identify_i2c: []
+      image: ''
+      mac: ''
+      mcu: ESP32-P4
+      name: IlI9881c
+      psram_enabled: false
+      sku: ''
+      tests: []
+      touch: []
 - mcu: ESP32
   devices:
   - name: M5AtomLite

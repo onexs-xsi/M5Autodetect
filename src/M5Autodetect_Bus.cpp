@@ -27,14 +27,22 @@ bool I2CBus::init() {
     if (_init) return true;
 #if defined(ARDUINO)
     if (_cfg.i2c.sda < 0 || _cfg.i2c.scl < 0) return false;
-    _wire->begin(_cfg.i2c.sda, _cfg.i2c.scl, _cfg.i2c.freq);
+    // Ensure clean state
+    _wire->end();
+    if (!_wire->begin(_cfg.i2c.sda, _cfg.i2c.scl, _cfg.i2c.freq)) {
+        return false;
+    }
+    // Note: Wire.begin() enables internal pullups by default.
+    // Calling pinMode() after begin() breaks I2C on ESP32 as it reconfigures the pins as GPIO.
+    // If we need to disable pullups, we should use gpio_set_pull_mode() or similar, 
+    // but for now we rely on Wire.begin() default (PULLUP).
 #else
     i2c_config_t conf = {0};
     conf.mode = I2C_MODE_MASTER;
     conf.sda_io_num = _cfg.i2c.sda;
     conf.scl_io_num = _cfg.i2c.scl;
-    conf.sda_pullup_en = GPIO_PULLUP_ENABLE;
-    conf.scl_pullup_en = GPIO_PULLUP_ENABLE;
+    conf.sda_pullup_en = _cfg.i2c.internal_pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
+    conf.scl_pullup_en = _cfg.i2c.internal_pullup ? GPIO_PULLUP_ENABLE : GPIO_PULLUP_DISABLE;
     conf.master.clk_speed = _cfg.i2c.freq;
     
     esp_err_t err = i2c_param_config((i2c_port_t)_cfg.i2c.port_num, &conf);
