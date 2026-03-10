@@ -2,6 +2,35 @@ print("Starting script...")
 print(f"__name__ is {__name__}")
 import sys
 import os
+
+
+def _configure_qt_dll_path():
+    candidates = []
+
+    for base in {sys.prefix, sys.base_prefix, os.path.dirname(sys.executable)}:
+        if not base:
+            continue
+        candidates.append({
+            'bin': os.path.join(base, 'Lib', 'site-packages', 'PyQt6', 'Qt6', 'bin'),
+            'plugins': os.path.join(base, 'Lib', 'site-packages', 'PyQt6', 'Qt6', 'plugins'),
+        })
+
+    if not hasattr(os, 'add_dll_directory'):
+        return
+
+    for candidate in candidates:
+        dll_dir = candidate['bin']
+        plugins_dir = candidate['plugins']
+        if os.path.isdir(dll_dir):
+            os.add_dll_directory(dll_dir)
+            if os.path.isdir(plugins_dir):
+                os.environ.setdefault('QT_PLUGIN_PATH', plugins_dir)
+                os.environ.setdefault('QT_QPA_PLATFORM_PLUGIN_PATH', os.path.join(plugins_dir, 'platforms'))
+            break
+
+
+_configure_qt_dll_path()
+
 import copy
 import html
 import json
@@ -23,7 +52,8 @@ from M5Autodetect_CBuilder_GenCode import M5HeaderGenerator
 # Paths
 BASE_DIR = os.path.dirname(__file__)
 YAML_FILE = os.path.join(BASE_DIR, 'm5stack_dev_config.yaml')
-OUTPUT_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData.h')
+OUTPUT_HEADER_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData.h')
+OUTPUT_SOURCE_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData.cpp')
 CACHE_DIR = os.path.join(BASE_DIR, '.cache')
 LOCALES_DIR = os.path.join(BASE_DIR, 'locales')
 
@@ -179,6 +209,7 @@ class FloatingButtonWidget(QWidget):
 
 class M5BuilderGUI(QMainWindow):
     HIGHLIGHT_STYLE = "background-color: #DFF7E0;"
+    VARIANT_OVERRIDE_STYLE = "background-color: #EAF4FF; color: #24476B; border: 1px solid #C8DDF4;"
     def __init__(self):
         super().__init__()
         self.setWindowTitle("M5Autodetect CBuilder GUI - byonexs.")
@@ -191,6 +222,8 @@ class M5BuilderGUI(QMainWindow):
         self.current_yaml_data = None
         self.base_yaml_data = None
         self.current_device_original = None
+        self._is_rebuilding_detail = False
+        self.variant_editors = []
         self.translator = None
         self.current_language = None
         self.available_languages = [
@@ -283,7 +316,7 @@ class M5BuilderGUI(QMainWindow):
         self.button_layout.addWidget(self.btn_save)
         
         self.btn_generate = QPushButton()
-        self.btn_generate.clicked.connect(self.generate_header_file)
+        self.btn_generate.clicked.connect(self.generate_device_data_files)
         self.btn_generate.setStyleSheet("background-color: #4CAF50; color: white; font-weight: bold;")
         self.button_layout.addWidget(self.btn_generate)
         
@@ -334,6 +367,75 @@ class M5BuilderGUI(QMainWindow):
             except Exception:
                 return str(value)
         return str(value).strip()
+
+    def _compose_variant_display_name(self, base_name, variant_name):
+        base = str(base_name or self.tr('Unknown Device'))
+        suffix = str(variant_name or '').strip()
+        return f"{base}_{suffix}" if suffix else base
+
+    def _is_effective_variant_override(self, value):
+        if value is None:
+            return False
+        if isinstance(value, str):
+            return value.strip() != ''
+        if isinstance(value, (list, dict)):
+            return len(value) > 0
+        return True
+
+    def _variant_has_overrides(self, variant_data):
+        if not isinstance(variant_data, dict):
+            return False
+        for key, value in variant_data.items():
+            if key == 'name':
+                continue
+            if self._is_effective_variant_override(value):
+                return True
+        return False
+
+    def _merge_variant_view_data(self, base_data, variant_data):
+        merged = copy.deepcopy(base_data or {})
+        variant = copy.deepcopy(variant_data or {})
+        for key, value in variant.items():
+            if key == 'name':
+                continue
+            if not self._is_effective_variant_override(value):
+                continue
+            merged[key] = value
+        merged['name'] = self._compose_variant_display_name((base_data or {}).get('name'), variant.get('name'))
+        return merged
+
+    def _variant_text_brush(self, variant_data):
+        return QBrush(QColor('#000000'))
+
+    def _refresh_config_selector(self):
+        base_name = str(self.device_data.get('name') or self.tr('Unknown Device'))
+        variants = self.device_data.get('variants', [])
+        if not isinstance(variants, list):
+            variants = []
+
+        self.combo_config.blockSignals(True)
+        self.combo_config.clear()
+        self.combo_config.addItem(self.tr("主设备: {name}").format(name=base_name), None)
+        for i, variant in enumerate(variants):
+            variant_name = self._compose_variant_display_name(base_name, variant.get('name', f'Variant {i+1}'))
+            self.combo_config.addItem(self.tr("变体: {name}").format(name=variant_name), i)
+        self.combo_config.blockSignals(False)
+
+    def _extract_variant_override_data(self, base_data, edited_data, variant_name):
+        overrides = {'name': str(variant_name or '').strip()}
+        if not isinstance(edited_data, dict):
+            return overrides
+
+        for key, value in edited_data.items():
+            if key == 'name':
+                continue
+            if not self._is_effective_variant_override(value):
+                continue
+            base_value = (base_data or {}).get(key)
+            if self._normalize_struct(value) != self._normalize_struct(base_value):
+                overrides[key] = copy.deepcopy(value)
+
+        return overrides
 
     def _collect_device_changes(self, old_data, new_data):
         if not isinstance(old_data, dict):
@@ -978,7 +1080,7 @@ class M5BuilderGUI(QMainWindow):
         self.btn_edit_yaml.setText(self.tr("📝 编辑 YAML"))
         self.btn_load.setText(self.tr("🔄 重新加载"))
         self.btn_save.setText(self.tr("💾 写入 YAML"))
-        self.btn_generate.setText(self.tr("⚙️ 生成头文件 (.h)"))
+        self.btn_generate.setText(self.tr("⚙️ 生成设备数据文件 (.h/.cpp)"))
 
         self._refresh_header_text()
         self._apply_floating_button_translation()
@@ -992,6 +1094,9 @@ class M5BuilderGUI(QMainWindow):
                     # If validation fails, we skip refresh to allow user to fix errors
                     if self.save_device_details(silent=True):
                         self.show_device_details(self.current_edit_data)
+                elif item_type == 'variant':
+                    if self.save_device_details(silent=True):
+                        self.show_variant_details(self.current_edit_data)
                 elif item_type == 'mcu':
                     self.show_mcu_details(self.current_edit_data)
                 elif item_type == 'pin':
@@ -1030,13 +1135,35 @@ class M5BuilderGUI(QMainWindow):
                 
                 item = QListWidgetItem(icon, device_name)
                 item.setData(Qt.ItemDataRole.UserRole, {
+                    'type': 'device',
                     'mcu_index': category_idx,
                     'device_index': dev_idx,
                     'sku': sku,
                     'eol': eol,
-                    'variants': device.get('variants', [])
+                    'variants': device.get('variants', []),
+                    'base_name': device_name,
+                    'variant_name': '',
+                    'variant_override': False,
                 })
                 self.dashboard_widget.addItem(item)
+
+                variants = device.get('variants', [])
+                if isinstance(variants, list):
+                    for variant_idx, variant in enumerate(variants):
+                        variant_display_name = self._compose_variant_display_name(device_name, variant.get('name', f'Variant {variant_idx+1}'))
+                        variant_item = QListWidgetItem(icon, variant_display_name)
+                        variant_item.setData(Qt.ItemDataRole.UserRole, {
+                            'type': 'variant',
+                            'mcu_index': category_idx,
+                            'device_index': dev_idx,
+                            'variant_index': variant_idx,
+                            'sku': sku,
+                            'eol': eol,
+                            'base_name': device_name,
+                            'variant_name': variant.get('name', f'Variant {variant_idx+1}'),
+                            'variant_override': self._variant_has_overrides(variant),
+                        })
+                        self.dashboard_widget.addItem(variant_item)
 
     def on_dashboard_item_clicked(self, item):
         """Handle dashboard item click"""
@@ -1046,15 +1173,28 @@ class M5BuilderGUI(QMainWindow):
             
         mcu_idx = data.get('mcu_index')
         dev_idx = data.get('device_index')
-        
-        # Find corresponding tree item
-        # Root -> MCU Item -> Device Item
+        variant_idx = data.get('variant_index')
+
         if mcu_idx < self.tree_widget.topLevelItemCount():
             mcu_item = self.tree_widget.topLevelItem(mcu_idx)
-            if dev_idx < mcu_item.childCount():
-                device_item = mcu_item.child(dev_idx)
-                self.tree_widget.setCurrentItem(device_item)
-                self.on_tree_item_clicked(device_item, 0)
+            for child_idx in range(mcu_item.childCount()):
+                tree_item = mcu_item.child(child_idx)
+                tree_data = tree_item.data(0, Qt.ItemDataRole.UserRole) or {}
+                if tree_data.get('device_index') != dev_idx:
+                    continue
+                if variant_idx is None and tree_data.get('type') == 'device':
+                    self.tree_widget.setCurrentItem(tree_item)
+                    self.on_tree_item_clicked(tree_item, 0)
+                    return
+                if variant_idx is not None:
+                    tree_item.setExpanded(True)
+                    for variant_child_idx in range(tree_item.childCount()):
+                        variant_item = tree_item.child(variant_child_idx)
+                        variant_data = variant_item.data(0, Qt.ItemDataRole.UserRole) or {}
+                        if variant_data.get('type') == 'variant' and variant_data.get('variant_index') == variant_idx:
+                            self.tree_widget.setCurrentItem(variant_item)
+                            self.on_tree_item_clicked(variant_item, 0)
+                            return
 
     def show_dashboard(self):
         self.stacked_widget.setCurrentWidget(self.dashboard_widget)
@@ -1099,37 +1239,22 @@ class M5BuilderGUI(QMainWindow):
                     'device_index': dev_idx,
                     'data': device
                 })
-                
-                # Add check pins under device
-                check_pins = device.get('check_pins', {})
-                
-                if isinstance(check_pins, list):
-                    for pin_idx, pin in enumerate(check_pins):
-                        gpio = pin.get('gpio', -1)
-                        mode = pin.get('mode', 'input')
-                        expect = pin.get('expect', 0)
-                        pin_item = QTreeWidgetItem(device_item)
-                        pin_item.setText(0, self.tr("📍 GPIO{gpio} ({mode}={expect})").format(gpio=gpio, mode=mode, expect=expect))
-                        pin_item.setData(0, Qt.ItemDataRole.UserRole, {
-                            'type': 'pin',
+                device_item.setExpanded(False)
+
+                variants = device.get('variants', [])
+                if isinstance(variants, list):
+                    for variant_idx, variant in enumerate(variants):
+                        variant_name = self._compose_variant_display_name(device_name, variant.get('name', f'Variant {variant_idx+1}'))
+                        variant_item = QTreeWidgetItem(device_item)
+                        variant_item.setText(0, self.tr("↳ {name}").format(name=variant_name))
+                        variant_item.setForeground(0, self._variant_text_brush(variant))
+                        variant_item.setData(0, Qt.ItemDataRole.UserRole, {
+                            'type': 'variant',
                             'mcu_index': category_idx,
                             'device_index': dev_idx,
-                            'pin_index': pin_idx,
-                            'gpio': gpio,
-                            'data': pin
-                        })
-                elif isinstance(check_pins, dict):
-                    for gpio, pin in check_pins.items():
-                        mode = pin.get('mode', 'input')
-                        expect = pin.get('expect', 0)
-                        pin_item = QTreeWidgetItem(device_item)
-                        pin_item.setText(0, self.tr("📍 GPIO{gpio} ({mode}={expect})").format(gpio=gpio, mode=mode, expect=expect))
-                        pin_item.setData(0, Qt.ItemDataRole.UserRole, {
-                            'type': 'pin',
-                            'mcu_index': category_idx,
-                            'device_index': dev_idx,
-                            'gpio': gpio,
-                            'data': pin
+                            'variant_index': variant_idx,
+                            'data': variant,
+                            'base_data': device,
                         })
     
     def on_tree_item_clicked(self, item, column):
@@ -1148,173 +1273,75 @@ class M5BuilderGUI(QMainWindow):
             self.show_mcu_details(item_data)
         elif item_type == 'device':
             self.show_device_details(item_data)
-        elif item_type == 'pin':
-            self.show_pin_details(item_data)
+        elif item_type == 'variant':
+            self.show_variant_details(item_data)
     
     def _add_variant_tab(self, variant_data):
         tab_widget = QWidget()
         layout = QVBoxLayout(tab_widget)
-        
-        # Name
+
         form_layout = QFormLayout()
         name_val = str(variant_data.get('name') or '')
         le_name = QLineEdit(name_val)
         form_layout.addRow(self.tr("变体名称:"), le_name)
         self._register_change_highlight(le_name, le_name.textChanged, le_name.text, name_val)
         layout.addLayout(form_layout)
-        
-        # Update Tab Title when name changes
-        default_tab_name = self.tr("新变体")
-        index = self.tabs_variants.addTab(tab_widget, name_val or default_tab_name)
-        le_name.textChanged.connect(
-            lambda text, w=tab_widget: self.tabs_variants.setTabText(
-                self.tabs_variants.indexOf(w), text or default_tab_name
-            )
-        )
-        
-        # Identify I2C (Visual) - 用于变体识别
+
         grp_id_i2c = QGroupBox(self.tr("识别 I2C (变体识别)"))
         layout_id_i2c = QVBoxLayout(grp_id_i2c)
-        id_i2c_editors = [] # List to store editors for this variant
-        
-        for item in variant_data.get('identify_i2c', []):
-            self._add_identify_i2c_editor(layout_id_i2c, item, id_i2c_editors)
-            
+        identify_i2c_editors = []
+        for item in variant_data.get('identify_i2c', []) or []:
+            self._add_identify_i2c_editor(layout_id_i2c, item, identify_i2c_editors)
         btn_add_id_i2c = QPushButton(self.tr("➕ 添加识别 I2C"))
-        btn_add_id_i2c.clicked.connect(lambda: self._add_identify_i2c_editor(layout_id_i2c, {}, id_i2c_editors))
+        btn_add_id_i2c.clicked.connect(lambda: self._add_identify_i2c_editor(layout_id_i2c, {}, identify_i2c_editors))
         layout_id_i2c.addWidget(btn_add_id_i2c)
         layout.addWidget(grp_id_i2c)
 
-        # Touch (Visual) - Step 5: Screen (Touch)
         grp_touch = QGroupBox(self.tr("Step 5: Screen - 触摸"))
         layout_touch = QVBoxLayout(grp_touch)
         touch_editors = []
-        
-        for item in variant_data.get('touch', []):
+        for item in variant_data.get('touch', []) or []:
             self._add_touch_editor(layout_touch, item, touch_editors)
-            
         btn_add_touch = QPushButton(self.tr("➕ 添加触摸"))
         btn_add_touch.clicked.connect(lambda: self._add_touch_editor(layout_touch, {}, touch_editors))
-        layout.addWidget(grp_pins)
+        layout_touch.addWidget(btn_add_touch)
+        layout.addWidget(grp_touch)
 
-        # Prerequisites (collapsed by default)
-        prereq_button = QPushButton(self.tr("前置条件 ▸"))
-        prereq_button.setMinimumHeight(28)
-        prereq_button.setStyleSheet("text-align: left; padding: 4px 8px;")
-        prereq_button.setCheckable(True)
-        prereq_button.setChecked(False)
-        layout.addWidget(prereq_button)
+        grp_display = QGroupBox(self.tr("Step 6: 显示屏"))
+        layout_display = QVBoxLayout(grp_display)
+        display_editors = []
+        for item in variant_data.get('display', []) or []:
+            self._add_display_editor_to_layout(layout_display, item, display_editors)
+        btn_add_display = QPushButton(self.tr("➕ 添加显示屏"))
+        btn_add_display.clicked.connect(lambda: self._add_display_editor_to_layout(layout_display, {}, display_editors))
+        layout_display.addWidget(btn_add_display)
+        layout.addWidget(grp_display)
 
-        prereq_container = QWidget()
-        prereq_container.setVisible(False)
-        prereq_vbox = QVBoxLayout(prereq_container)
-
-        prereq_list_layout = QVBoxLayout()
-        prereq_entries = []
-
-        def add_prereq_entry(entry_data=None):
-            data = entry_data or {}
-            row = QWidget()
-            row_layout = QHBoxLayout(row)
-
-            cb_type = NoScrollComboBox()
-            cb_type.addItems(['power', 'i2c_read', 'i2c_write', 'spi_read', 'spi_write', 'gpio_write'])
-            cb_type.setCurrentText(str(data.get('type', 'power')))
-            row_layout.addWidget(cb_type)
-
-            le_params = QLineEdit(str(data.get('params', '')))
-            le_params.setPlaceholderText(self.tr("参数示例: pin=21,value=1 或 addr=0x55,reg=0x00"))
-            row_layout.addWidget(le_params)
-
-            btn_remove = QPushButton(self.tr("删除"))
-            btn_remove.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-            row_layout.addWidget(btn_remove)
-
-            prereq_list_layout.addWidget(row)
-
-            entry_dict = {
-                'widget': row,
-                'type': cb_type,
-                'params': le_params
-            }
-            prereq_entries.append(entry_dict)
-
-            btn_remove.clicked.connect(lambda: remove_prereq_entry(entry_dict))
-
-        def remove_prereq_entry(entry_dict):
-            if entry_dict in prereq_entries:
-                prereq_entries.remove(entry_dict)
-                entry_dict['widget'].deleteLater()
-
-        # initial entries
-        for item in touch_data.get('prerequisites', []) or []:
-            add_prereq_entry(item)
-
-        btn_add_prereq = QPushButton(self.tr("➕ 添加前置条件"))
-        btn_add_prereq.clicked.connect(lambda: add_prereq_entry({}))
-
-        prereq_vbox.addLayout(prereq_list_layout)
-        prereq_vbox.addWidget(btn_add_prereq)
-        layout.addWidget(prereq_container)
-
-        def toggle_prereq(checked):
-            prereq_container.setVisible(checked)
-            prereq_button.setText(self.tr("前置条件 ▾") if checked else self.tr("前置条件 ▸"))
-
-        prereq_button.toggled.connect(toggle_prereq)
-
-        def update_visibility(bus_type):
-            is_i2c = (bus_type == 'i2c')
-            
-            # I2C specific
-            lbl_sda.setVisible(is_i2c)
-            le_sda.setVisible(is_i2c)
-            lbl_scl.setVisible(is_i2c)
-            le_scl.setVisible(is_i2c)
-            lbl_addr.setVisible(is_i2c)
-            le_addr.setVisible(is_i2c)
-            
-            # SPI specific
-            lbl_cs.setVisible(not is_i2c)
-            le_cs.setVisible(not is_i2c)
-            lbl_mosi.setVisible(not is_i2c)
-            le_mosi.setVisible(not is_i2c)
-            lbl_miso.setVisible(not is_i2c)
-            le_miso.setVisible(not is_i2c)
-            lbl_sclk.setVisible(not is_i2c)
-            le_sclk.setVisible(not is_i2c)
-
-        cb_bus_type.currentTextChanged.connect(update_visibility)
-        update_visibility(bus_type_val)
-        
-        # Delete
-        btn_del = QPushButton(self.tr("删除此触摸"))
+        btn_del = QPushButton(self.tr("删除此变体"))
         btn_del.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
         layout.addWidget(btn_del)
-        
-        parent_layout.addWidget(widget)
-        
+
         editor_dict = {
-            'widget': widget,
-            'bus_type': cb_bus_type,
-            'driver': le_driver,
-            'addr': le_addr,
-            'width': sb_width,
-            'height': sb_height,
-            'freq': sb_freq,
-            'pin_sda': le_sda,
-            'pin_scl': le_scl,
-            'pin_cs': le_cs,
-            'pin_mosi': le_mosi,
-            'pin_miso': le_miso,
-            'pin_sclk': le_sclk,
-            'pin_int': le_int,
-            'pin_rst': le_rst,
-            'prereq_entries': prereq_entries
+            'widget': tab_widget,
+            'name': le_name,
+            'identify_i2c_editors': identify_i2c_editors,
+            'touch_editors': touch_editors,
+            'display_editors': display_editors,
         }
-        editor_list.append(editor_dict)
-        
-        btn_del.clicked.connect(lambda: self._delete_editor_from_list(widget, editor_dict, editor_list))
+
+        self.variant_editors.append(editor_dict)
+
+        if hasattr(self, 'tabs_variants'):
+            default_tab_name = self.tr("新变体")
+            self.tabs_variants.addTab(tab_widget, name_val or default_tab_name)
+            le_name.textChanged.connect(
+                lambda text, w=tab_widget: self.tabs_variants.setTabText(
+                    self.tabs_variants.indexOf(w), text or default_tab_name
+                )
+            )
+
+        btn_del.clicked.connect(lambda: self._delete_editor_from_list(tab_widget, editor_dict, self.variant_editors))
+        return editor_dict
 
     def _add_identify_i2c_editor(self, parent_layout, id_i2c_data, editor_list):
         widget = QGroupBox()
@@ -2787,15 +2814,37 @@ class M5BuilderGUI(QMainWindow):
 
         return new_data
 
-    def _populate_ui_from_data(self, device_data):
+    def _populate_ui_from_data(self, device_data, base_data=None, variant_data=None):
         self._clear_layout(self.inner_detail_layout)
         self.form_layout = self.inner_detail_layout
+
+        is_variant_view = isinstance(variant_data, dict)
+        override_keys = set(variant_data.keys()) if is_variant_view else set()
+
+        def field_is_overridden(key):
+            if not is_variant_view or key == 'name':
+                return False
+            if key not in override_keys:
+                return False
+            if not self._is_effective_variant_override(variant_data.get(key)):
+                return False
+            return self._normalize_struct(variant_data.get(key)) != self._normalize_struct((base_data or {}).get(key))
+
+        def apply_variant_override_style(widget, key):
+            if is_variant_view and (key == 'name' or field_is_overridden(key)):
+                widget.setStyleSheet(self.VARIANT_OVERRIDE_STYLE)
+
+        def apply_variant_group_style(group_widget, keys):
+            if not is_variant_view:
+                return
+            if any(field_is_overridden(key) for key in keys):
+                group_widget.setStyleSheet("QGroupBox { color: #4A6B8F; }")
         
         # 1. Basic Info
         group_basic = QGroupBox(self.tr("基本信息"))
         form_basic = QFormLayout(group_basic)
         
-        name_val = str(device_data.get('name') or '')
+        name_val = str((variant_data or {}).get('name') if is_variant_view else device_data.get('name') or '')
         desc_val = str(device_data.get('description') or '')
         sku_val = str(device_data.get('sku') or '')
         eol_val = str(device_data.get('eol') or '')
@@ -2830,6 +2879,15 @@ class M5BuilderGUI(QMainWindow):
         psram_val = bool(device_data.get('psram_enabled', False))
         self.edit_psram.setChecked(psram_val)
         self.edit_psram.setToolTip(self.tr("当该板型硬件具备 PSRAM 时选中此项；这不是运行时是否启用的状态。"))
+
+        if is_variant_view:
+            generated_name = self._compose_variant_display_name((base_data or {}).get('name'), name_val)
+            board_name_label = QLabel(generated_name)
+            board_name_label.setStyleSheet("color: #24476B;")
+            variant_hint = QLabel(self.tr("当前查看的是变体配置。未覆写的字段继承主设备；浅蓝色字段表示该变体已覆写。"))
+            variant_hint.setWordWrap(True)
+            variant_hint.setStyleSheet("color: #5F7285;")
+            form_basic.addRow(self.tr("板名:"), board_name_label)
         
         form_basic.addRow(self.tr("名称:"), self.edit_name)
         form_basic.addRow(self.tr("描述:"), self.edit_desc)
@@ -2839,6 +2897,17 @@ class M5BuilderGUI(QMainWindow):
         form_basic.addRow(self.tr("文档链接:"), self.edit_docs)
         form_basic.addRow("MCU:", self.edit_mcu)
         form_basic.addRow("PSRAM:", self.edit_psram)
+
+        apply_variant_override_style(self.edit_desc, 'description')
+        apply_variant_override_style(self.edit_sku, 'sku')
+        apply_variant_override_style(self.edit_eol, 'eol')
+        apply_variant_override_style(self.edit_image, 'image')
+        apply_variant_override_style(self.edit_docs, 'docs')
+        apply_variant_override_style(self.edit_mcu, 'mcu')
+        apply_variant_override_style(self.edit_psram, 'psram_enabled')
+
+        if is_variant_view:
+            form_basic.addRow(self.tr("说明:"), variant_hint)
         
         self.form_layout.addWidget(group_basic)
         
@@ -2895,6 +2964,7 @@ class M5BuilderGUI(QMainWindow):
         layout_pin_actions.addWidget(btn_import_pins)
         layout_pin_actions.addStretch()
         layout_pins.addLayout(layout_pin_actions)
+        apply_variant_group_style(group_pins, ['check_pins', 'check_pins_count'])
         self.form_layout.addWidget(group_pins)
 
         # Step 3: I2C Internal
@@ -2921,6 +2991,7 @@ class M5BuilderGUI(QMainWindow):
         layout_i2c_actions.addStretch()
         
         layout_main_i2c.addLayout(layout_i2c_actions)
+        apply_variant_group_style(group_i2c, ['i2c_internal'])
         self.form_layout.addWidget(group_i2c)
 
         # Step 4: Additional Tests
@@ -2938,6 +3009,7 @@ class M5BuilderGUI(QMainWindow):
         btn_add_test = QPushButton(self.tr("➕ 添加测试"))
         btn_add_test.clicked.connect(lambda: self._add_additional_test_editor({}))
         layout_main_add_tests.addWidget(btn_add_test)
+        apply_variant_group_style(group_add_tests, ['additional_tests'])
         self.form_layout.addWidget(group_add_tests)
 
         # Step 5: Touch (GUI)
@@ -2955,6 +3027,7 @@ class M5BuilderGUI(QMainWindow):
         btn_add_touch = QPushButton(self.tr("➕ 添加触摸"))
         btn_add_touch.clicked.connect(lambda: self._add_touch_editor(self.layout_touch_items, {}, self.touch_editors))
         layout_main_touch.addWidget(btn_add_touch)
+        apply_variant_group_style(group_touch, ['touch'])
         self.form_layout.addWidget(group_touch)
 
         # Step 6: Display
@@ -2972,6 +3045,7 @@ class M5BuilderGUI(QMainWindow):
         btn_add_disp = QPushButton(self.tr("➕ 添加显示屏"))
         btn_add_disp.clicked.connect(lambda: self._add_display_editor({}))
         layout_main_disp.addWidget(btn_add_disp)
+        apply_variant_group_style(group_disp, ['display'])
         self.form_layout.addWidget(group_disp)
 
         # Add spacing
@@ -2994,8 +3068,13 @@ class M5BuilderGUI(QMainWindow):
             self.device_data.update(new_data)
             self.device_data['variants'] = variants
         else:
-            # Variant
-            self.device_data['variants'][self.current_config_index].update(new_data)
+            variants = self.device_data.get('variants', [])
+            if self.current_config_index < len(variants):
+                base_view = copy.deepcopy(self.device_data)
+                base_view.pop('variants', None)
+                variant_name = new_data.get('name', variants[self.current_config_index].get('name', ''))
+                variants[self.current_config_index] = self._extract_variant_override_data(base_view, new_data, variant_name)
+                self.device_data['variants'] = variants
             
         # Handle MCU Change (Move device to another category if needed)
         need_tree_refresh = False
@@ -3037,13 +3116,21 @@ class M5BuilderGUI(QMainWindow):
                 self.current_yaml_data['mcu_categories'][mcu_idx]['devices'][dev_idx] = self.device_data
         else:
             self.current_yaml_data['mcu_categories'][mcu_idx]['devices'][dev_idx] = self.device_data
+
+        if self.current_config_index is None:
+            compare_data = copy.deepcopy(self.device_data)
+        else:
+            variants = self.device_data.get('variants', [])
+            current_variant = variants[self.current_config_index] if self.current_config_index < len(variants) else {}
+            compare_data = self._merge_variant_view_data(self.device_data, current_variant)
+            compare_data['name'] = str(current_variant.get('name') or '')
         
         if not silent:
-            if not self._confirm_device_changes(self.current_device_original, self.device_data):
+            if not self._confirm_device_changes(self.current_device_original, compare_data):
                 return False
         
         # Update original snapshot
-        self.current_device_original = copy.deepcopy(self.device_data)
+        self.current_device_original = copy.deepcopy(compare_data)
         
         # Write to file
         try:
@@ -3518,7 +3605,7 @@ class M5BuilderGUI(QMainWindow):
         if self.stacked_widget.currentWidget() == self.detail_container:
             # Check if we are editing a device
             if hasattr(self, 'current_edit_data') and self.current_edit_data:
-                if self.current_edit_data.get('type') == 'device':
+                if self.current_edit_data.get('type') in ('device', 'variant'):
                     # Try to save device details silently
                     if not self.save_device_details(silent=True):
                         # If validation failed, stop saving
@@ -3542,20 +3629,24 @@ class M5BuilderGUI(QMainWindow):
             self.populate_dashboard()
             
             # Refresh current device view if we're editing a device to clear highlights
-            if hasattr(self, 'current_edit_data') and self.current_edit_data and self.current_edit_data.get('type') == 'device':
+            if hasattr(self, 'current_edit_data') and self.current_edit_data and self.current_edit_data.get('type') in ('device', 'variant'):
                 mcu_idx = self.current_edit_data.get('mcu_index')
                 dev_idx = self.current_edit_data.get('device_index')
                 if mcu_idx is not None and dev_idx is not None:
                     try:
                         updated_device = self.current_yaml_data['mcu_categories'][mcu_idx]['devices'][dev_idx]
-                        # Refresh the device detail view with updated data
                         updated_item_data = {
-                            'type': 'device',
+                            'type': self.current_edit_data.get('type', 'device'),
                             'mcu_index': mcu_idx,
                             'device_index': dev_idx,
-                            'data': updated_device
+                            'variant_index': self.current_edit_data.get('variant_index'),
+                            'data': updated_device,
+                            'base_data': updated_device,
                         }
-                        self.show_device_details(updated_item_data)
+                        if updated_item_data['type'] == 'variant':
+                            self.show_variant_details(updated_item_data)
+                        else:
+                            self.show_device_details(updated_item_data)
                     except (KeyError, IndexError):
                         pass
             self.statusBar().showMessage(
@@ -3579,7 +3670,7 @@ class M5BuilderGUI(QMainWindow):
                 self.tr("保存文件失败: {error}").format(error=str(e))
             )
 
-    def generate_header_file(self):
+    def generate_device_data_files(self):
         # Prefer in-memory YAML (包含表单修改)，否则回落到编辑器文本
         try:
             if self.current_yaml_data:
@@ -3591,16 +3682,22 @@ class M5BuilderGUI(QMainWindow):
                     data = {}
                 self.current_yaml_data = data
 
-            success = M5HeaderGenerator.generate_from_data(data, OUTPUT_FILE)
+            success = M5HeaderGenerator.generate_from_data(data, OUTPUT_HEADER_FILE)
             
             if success:
                 self.statusBar().showMessage(
-                    self.tr("已生成: {path}").format(path=OUTPUT_FILE)
+                    self.tr("已生成: {header} 和 {source}").format(
+                        header=OUTPUT_HEADER_FILE,
+                        source=OUTPUT_SOURCE_FILE,
+                    )
                 )
                 QMessageBox.information(
                     self,
                     self.tr("成功"),
-                    self.tr("头文件已成功生成到:\n{path}").format(path=OUTPUT_FILE)
+                    self.tr("设备数据文件已成功生成到:\n{header}\n{source}").format(
+                        header=OUTPUT_HEADER_FILE,
+                        source=OUTPUT_SOURCE_FILE,
+                    )
                 )
             else:
                 raise Exception("生成失败")
@@ -3615,7 +3712,7 @@ class M5BuilderGUI(QMainWindow):
             QMessageBox.critical(
                 self,
                 self.tr("生成错误"),
-                self.tr("生成头文件失败:\n{error}").format(error=str(e))
+                self.tr("生成设备数据文件失败:\n{error}").format(error=str(e))
             )
 
     def _adjust_table_height(self, table_widget=None):
@@ -3809,10 +3906,32 @@ class M5BuilderGUI(QMainWindow):
     
     def show_device_details(self, item_data):
         """Show device details in an editable form"""
+        self._is_rebuilding_detail = True
+        self.variant_editors = []
         self.current_edit_data = item_data
-        self.device_data = copy.deepcopy(item_data.get('data', {}))
-        self.current_device_original = copy.deepcopy(self.device_data)
-        self.current_config_index = None # None = Main, int = Variant index
+        mcu_idx = item_data.get('mcu_index')
+        dev_idx = item_data.get('device_index')
+
+        try:
+            self.device_data = copy.deepcopy(self.current_yaml_data['mcu_categories'][mcu_idx]['devices'][dev_idx])
+        except Exception:
+            self.device_data = copy.deepcopy(item_data.get('base_data') or item_data.get('data', {}))
+
+        self.current_config_index = item_data.get('variant_index') if item_data.get('type') == 'variant' else None
+
+        if self.current_config_index is None:
+            initial_view_data = copy.deepcopy(self.device_data)
+            initial_base_data = None
+            initial_variant_data = None
+            self.current_device_original = copy.deepcopy(initial_view_data)
+        else:
+            variants = self.device_data.get('variants', [])
+            variant_data = variants[self.current_config_index] if self.current_config_index < len(variants) else {}
+            initial_base_data = copy.deepcopy(self.device_data)
+            initial_variant_data = copy.deepcopy(variant_data)
+            initial_view_data = self._merge_variant_view_data(initial_base_data, initial_variant_data)
+            initial_view_data['name'] = str(initial_variant_data.get('name') or '')
+            self.current_device_original = copy.deepcopy(initial_view_data)
 
         # Create Scroll Area
         scroll = QScrollArea()
@@ -3824,14 +3943,12 @@ class M5BuilderGUI(QMainWindow):
         layout_selector = QHBoxLayout()
         layout_selector.addWidget(QLabel(self.tr("当前配置:")))
         self.combo_config = NoScrollComboBox()
-        self.combo_config.addItem(self.tr("主设备 (Main Device)"), None)
-        
-        variants = self.device_data.get('variants', [])
-        if isinstance(variants, list):
-            for i, v in enumerate(variants):
-                v_name = v.get('name', f'Variant {i+1}')
-                self.combo_config.addItem(f"变体: {v_name}", i)
-        
+        self._refresh_config_selector()
+        selected_index = 0 if self.current_config_index is None else self.current_config_index + 1
+        if 0 <= selected_index < self.combo_config.count():
+            self.combo_config.blockSignals(True)
+            self.combo_config.setCurrentIndex(selected_index)
+            self.combo_config.blockSignals(False)
         self.combo_config.currentIndexChanged.connect(self.switch_config)
         layout_selector.addWidget(self.combo_config)
         
@@ -3852,8 +3969,7 @@ class M5BuilderGUI(QMainWindow):
         self.inner_detail_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.addWidget(self.detail_container_widget)
         
-        # Populate initial view (Main)
-        self._populate_ui_from_data(self.device_data)
+        self._populate_ui_from_data(initial_view_data, initial_base_data, initial_variant_data)
         
         # Setup Floating Button
         self._set_floating_button_text("💾 保存修改")
@@ -3873,13 +3989,20 @@ class M5BuilderGUI(QMainWindow):
                 self.detail_container.btn_apply.show()
                 self.detail_container.btn_apply.raise_()
                 self.detail_container.btn_apply.update()
+            self._is_rebuilding_detail = False
 
         QTimer.singleShot(0, _ensure_button_visible)
 
+    def show_variant_details(self, item_data):
+        self.show_device_details(item_data)
+
     def switch_config(self, index):
+        if getattr(self, '_is_rebuilding_detail', False):
+            return
+
         try:
             current_view_data = self._collect_data_from_ui()
-        except ValueError:
+        except (ValueError, RuntimeError):
             current_view_data = {}
         
         if self.current_config_index is None:
@@ -3887,24 +4010,38 @@ class M5BuilderGUI(QMainWindow):
             self.device_data.update(current_view_data)
             self.device_data['variants'] = variants
         else:
-            if self.current_config_index < len(self.device_data.get('variants', [])):
-                self.device_data['variants'][self.current_config_index].update(current_view_data)
+            variants = self.device_data.get('variants', [])
+            if self.current_config_index < len(variants):
+                base_view = copy.deepcopy(self.device_data)
+                base_view.pop('variants', None)
+                variant_name = current_view_data.get('name', variants[self.current_config_index].get('name', ''))
+                variants[self.current_config_index] = self._extract_variant_override_data(base_view, current_view_data, variant_name)
+                self.device_data['variants'] = variants
         
         item_data = self.combo_config.currentData()
         self.current_config_index = item_data
         
         if self.current_config_index is None:
-            data = self.device_data
+            data = copy.deepcopy(self.device_data)
+            base_data = None
+            variant_data = None
         else:
             variants = self.device_data.get('variants', [])
             if self.current_config_index < len(variants):
-                data = variants[self.current_config_index]
+                variant_data = copy.deepcopy(variants[self.current_config_index])
+                base_data = copy.deepcopy(self.device_data)
+                data = self._merge_variant_view_data(base_data, variant_data)
+                data['name'] = str(variant_data.get('name') or '')
             else:
                 data = {}
-        
-        self._populate_ui_from_data(data)
+                base_data = copy.deepcopy(self.device_data)
+                variant_data = {}
+
+        self._populate_ui_from_data(data, base_data, variant_data)
 
     def _add_new_variant(self):
+        if getattr(self, '_is_rebuilding_detail', False):
+            return
         self.switch_config(self.combo_config.currentIndex())
         
         variants = self.device_data.get('variants', [])
@@ -3913,14 +4050,13 @@ class M5BuilderGUI(QMainWindow):
         new_variant = {'name': 'New Variant'}
         variants.append(new_variant)
         self.device_data['variants'] = variants
-        
+
+        self._refresh_config_selector()
         self.combo_config.blockSignals(True)
-        self.combo_config.addItem(f"变体: New Variant", len(variants)-1)
         self.combo_config.setCurrentIndex(self.combo_config.count()-1)
         self.combo_config.blockSignals(False)
-        
         self.current_config_index = len(variants)-1
-        self._populate_ui_from_data(new_variant)
+        self._populate_ui_from_data({'name': 'New Variant'}, self.device_data, new_variant)
 
     def _delete_current_variant(self):
         if self.current_config_index is None:
@@ -3936,16 +4072,11 @@ class M5BuilderGUI(QMainWindow):
             del variants[self.current_config_index]
             
         self.device_data['variants'] = variants
-        
+
+        self._refresh_config_selector()
         self.combo_config.blockSignals(True)
-        self.combo_config.clear()
-        self.combo_config.addItem(self.tr("主设备 (Main Device)"), None)
-        for i, v in enumerate(variants):
-            v_name = v.get('name', f'Variant {i+1}')
-            self.combo_config.addItem(f"变体: {v_name}", i)
-        self.combo_config.blockSignals(False)
-        
         self.combo_config.setCurrentIndex(0)
+        self.combo_config.blockSignals(False)
         self.current_config_index = None
         self._populate_ui_from_data(self.device_data)
 

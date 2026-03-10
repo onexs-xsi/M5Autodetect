@@ -107,7 +107,7 @@ const std::vector<DeviceInfo> devices_data = {
         }
     },
     {
-        "M5Tab5 (ST7123)",
+        "M5Tab5_ST7123",
         "SKU:C145/K145",
         "ESP32-P4",
         board_M5Tab5_ST7123,
@@ -153,7 +153,7 @@ const std::vector<DeviceInfo> devices_data = {
         }
     },
     {
-        "M5Tab5 (IlI9881c)",
+        "M5Tab5_IlI9881c",
         "SKU:C145/K145",
         "ESP32-P4",
         board_M5Tab5_IlI9881c,

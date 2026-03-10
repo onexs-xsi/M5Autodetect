@@ -33,6 +33,12 @@ class M5HeaderGenerator:
         return safe_name
 
     @staticmethod
+    def _compose_board_name(base_name, suffix=''):
+        base = str(base_name or 'Unknown')
+        suffix = str(suffix or '').strip()
+        return f"{base}_{suffix}" if suffix else base
+
+    @staticmethod
     def _get_test_type(val):
         """Convert test type to integer"""
         if isinstance(val, str):
@@ -339,9 +345,7 @@ class M5HeaderGenerator:
                 
                 for variant in variants:
                     suffix = variant.get('name', '')
-                    name = base_name
-                    if suffix:
-                        name = f"{base_name} ({suffix})"
+                    name = M5HeaderGenerator._compose_board_name(base_name, suffix)
                     
                     sku = dev.get('sku', 'Unknown')
                     

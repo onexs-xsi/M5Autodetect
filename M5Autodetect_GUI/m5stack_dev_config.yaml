@@ -150,7 +150,7 @@ mcu_categories:
     tests: []
     touch: []
     variants:
-    - additional_tests: []
+    - name: ST7123
       check_pins:
         21:
           mode: input
@@ -188,56 +188,43 @@ mcu_categories:
         44:
           mode: input
           expect: 1
-      description: ''
-      display: []
-      docs: ''
-      eol: ''
       i2c_internal:
-      - detect:
-        - addr: 16
-          name: Unknown_0x10
-        - addr: 50
-          name: Unknown_0x32
-        - addr: 64
-          name: Unknown_0x40
-        - addr: 65
-          name: Unknown_0x41
-        - addr: 67
-          name: Unknown_0x43
-        - addr: 68
-          name: Unknown_0x44
-        - addr: 104
-          name: Unknown_0x68
-        - addr: 85
-          name: Unknown_0x55
-        detect_count: 8
-        freq: 400000
-        port: 0
-        prerequisites:
-        - addr: 67
-          data: 48
-          reg: 3
-          type: i2c_write
-        - addr: 67
-          data: 48
-          reg: 5
-          type: i2c_write
-        - addr: 67
-          data: 0
-          reg: 7
-          type: i2c_write
-        scl: 32
+      - port: 0
         sda: 31
-      identify_i2c: []
-      image: ''
-      mac: ''
-      mcu: ESP32-P4
-      name: ST7123
-      psram_enabled: false
-      sku: ''
-      tests: []
-      touch: []
-    - additional_tests: []
+        scl: 32
+        freq: 400000
+        detect:
+        - name: Unknown_0x10
+          addr: 16
+        - name: Unknown_0x32
+          addr: 50
+        - name: Unknown_0x40
+          addr: 64
+        - name: Unknown_0x41
+          addr: 65
+        - name: Unknown_0x43
+          addr: 67
+        - name: Unknown_0x44
+          addr: 68
+        - name: Unknown_0x68
+          addr: 104
+        - name: Unknown_0x55
+          addr: 85
+        detect_count: 8
+        prerequisites:
+        - type: i2c_write
+          addr: 67
+          reg: 3
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 7
+          data: 0
+    - name: IlI9881c
       check_pins:
         21:
           mode: input
@@ -275,10 +262,6 @@ mcu_categories:
         44:
           mode: input
           expect: 1
-      description: ''
-      display: []
-      docs: ''
-      eol: ''
       i2c_internal:
       - port: 0
         sda: 31
@@ -315,15 +298,6 @@ mcu_categories:
           addr: 67
           reg: 7
           data: 0
-      identify_i2c: []
-      image: ''
-      mac: ''
-      mcu: ESP32-P4
-      name: IlI9881c
-      psram_enabled: false
-      sku: ''
-      tests: []
-      touch: []
 - mcu: ESP32
   devices:
   - name: M5AtomLite
