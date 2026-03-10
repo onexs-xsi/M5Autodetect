@@ -2,9 +2,10 @@
 #ifndef M5_AUTODETECT_SELF_CHECK_H
 #define M5_AUTODETECT_SELF_CHECK_H
 
-#include <Arduino.h>
 #include <vector>
-#include "M5Autodetect_Bus.h"
+
+#include "bus/M5Autodetect_Bus.h"
+#include "platform/M5Autodetect_Runtime.h"
 
 namespace m5 {
 namespace autodetect {

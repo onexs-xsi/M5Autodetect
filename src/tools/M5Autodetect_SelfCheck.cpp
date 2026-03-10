@@ -1,7 +1,8 @@
-#include "M5Autodetect_SlefCheck.h"
+#include "M5Autodetect_SelfCheck.h"
+
+#include "platform/M5Autodetect_IdfI2C.h"
+
 #include <algorithm>
-#include <esp32-hal-psram.h>
-#include <Wire.h>
 
 namespace {
 

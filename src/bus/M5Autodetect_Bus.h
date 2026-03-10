@@ -1,19 +1,14 @@
 #ifndef M5_AUTODETECT_BUS_H
 #define M5_AUTODETECT_BUS_H
 
-#include <stdint.h>
 #include <stddef.h>
+#include <stdint.h>
 
-#if defined(ARDUINO)
-#include <Arduino.h>
-#include <Wire.h>
-#include <SPI.h>
-#else
-#include "driver/i2c.h"
+#include "driver/i2c_master.h"
 #include "driver/spi_master.h"
-#include "driver/gpio.h"
-#include "esp_err.h"
-#endif
+
+#include "platform/M5Autodetect_Runtime.h"
+#include "platform/M5Autodetect_IdfSPI.h"
 
 namespace m5 {
 namespace autodetect {
@@ -66,17 +61,14 @@ public:
     bool read(uint8_t* data, size_t len) override;
     bool writeRead(const uint8_t* write_data, size_t write_len, uint8_t* read_data, size_t read_len) override;
     void release() override;
-    
-    // I2C Scan functionality
     bool scan(uint8_t* found_addresses, size_t max_devices, size_t* found_count);
     bool probeAddress(uint8_t addr);
-    
+
 private:
     BusConfig _cfg;
     bool _init;
-#if defined(ARDUINO)
-    TwoWire* _wire;
-#endif
+    i2c_master_bus_handle_t _bus_handle;
+    i2c_master_dev_handle_t _dev_handle;
 };
 
 class SPIBus : public Bus {
@@ -88,23 +80,15 @@ public:
     bool read(uint8_t* data, size_t len) override;
     bool writeRead(const uint8_t* write_data, size_t write_len, uint8_t* read_data, size_t read_len) override;
     void release() override;
+
 private:
     BusConfig _cfg;
     bool _init;
-#if defined(ARDUINO)
-    SPIClass* _spi;
-#else
-    spi_device_handle_t _spi_handle;
-#endif
+    IdfSpiDevice _device;
 };
 
-// GPIO Helper Functions
 namespace gpio {
-    // Read GPIO level and restore to original state after reading
-    // Returns: GPIO level (0 or 1), or -1 on error
     int readPinWithRestore(int pin, int mode = INPUT);
-    
-    // Batch read multiple GPIO pins
     bool readPinsWithRestore(const int* pins, size_t pin_count, int* levels, int mode = INPUT);
 } // namespace gpio
 

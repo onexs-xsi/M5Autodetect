@@ -1,12 +1,18 @@
 #include "M5Autodetect.h"
-#include "M5Autodetect_Data.h"
-#include <Arduino.h>
-#include <Wire.h>
-#include <esp32-hal-psram.h>
 
-// Helper macro for debug printing (only prints if _serial is set)
-#define DBG_PRINT(fmt, ...) do { if (_serial) _serial->print(fmt); } while(0)
-#define DBG_PRINTF(fmt, ...) do { if (_serial) _serial->printf(fmt, ##__VA_ARGS__); } while(0)
+#include <cstdarg>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "data/M5Autodetect_DeviceData.h"
+#include "platform/M5Autodetect_IdfI2C.h"
+
+#define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
+#include "esp_log.h"
+
+#define LOG_TEXT(level, message) do { logMessage(level, message); } while(0)
+#define LOG_PRINTF(level, fmt, ...) do { logPrintf(level, fmt, ##__VA_ARGS__); } while(0)
 
 // Keep chip family distinctions so ESP32-P4 不会被误判成经典 ESP32。
 enum class ChipKind {
@@ -35,6 +41,71 @@ static ChipKind detectChipKind(const String& chip) {
     if (chip.indexOf("ESP32-P4") != -1) return ChipKind::Esp32P4;
     if (chip.indexOf("ESP32") != -1) return ChipKind::Esp32;
     return ChipKind::Unknown;
+}
+
+constexpr const char* kLogTag = "M5Autodetect";
+
+esp_log_level_t toEspLogLevel(M5Autodetect::debug_t level) {
+    switch (level) {
+        case M5Autodetect::debug_error:
+            return ESP_LOG_ERROR;
+        case M5Autodetect::debug_warn:
+            return ESP_LOG_WARN;
+        case M5Autodetect::debug_info:
+            return ESP_LOG_INFO;
+        case M5Autodetect::debug_debug:
+            return ESP_LOG_DEBUG;
+        case M5Autodetect::debug_verbose:
+            return ESP_LOG_VERBOSE;
+        case M5Autodetect::debug_none:
+        default:
+            return ESP_LOG_NONE;
+    }
+}
+
+std::string trimTrailingLineBreaks(std::string text) {
+    while (!text.empty() && (text.back() == '\r' || text.back() == '\n')) {
+        text.pop_back();
+    }
+    return text;
+}
+
+std::string formatString(const char* format, va_list args) {
+    va_list args_copy;
+    va_copy(args_copy, args);
+    const int required = vsnprintf(nullptr, 0, format, args_copy);
+    va_end(args_copy);
+
+    if (required <= 0) {
+        return {};
+    }
+
+    std::vector<char> buffer(static_cast<size_t>(required) + 1);
+    vsnprintf(buffer.data(), buffer.size(), format, args);
+    return std::string(buffer.data(), static_cast<size_t>(required));
+}
+
+void writeEspLog(esp_log_level_t level, const std::string& message) {
+    switch (level) {
+        case ESP_LOG_ERROR:
+            ESP_LOGE(kLogTag, "%s", message.c_str());
+            break;
+        case ESP_LOG_WARN:
+            ESP_LOGW(kLogTag, "%s", message.c_str());
+            break;
+        case ESP_LOG_INFO:
+            ESP_LOGI(kLogTag, "%s", message.c_str());
+            break;
+        case ESP_LOG_DEBUG:
+            ESP_LOGD(kLogTag, "%s", message.c_str());
+            break;
+        case ESP_LOG_VERBOSE:
+            ESP_LOGV(kLogTag, "%s", message.c_str());
+            break;
+        case ESP_LOG_NONE:
+        default:
+            break;
+    }
 }
 
 // Helper for bit-banging SPI to read display ID
@@ -124,6 +195,52 @@ M5Autodetect::M5Autodetect() {
 void M5Autodetect::begin(debug_t debug, Print* serial) {
     _debug = debug;
     _serial = serial;
+    esp_log_level_set(kLogTag, toEspLogLevel(debug));
+}
+
+void M5Autodetect::logMessage(debug_t level, const char* message) const {
+    if (_debug < level || !message) {
+        return;
+    }
+
+    if (_serial) {
+        _serial->print(message);
+        return;
+    }
+
+    const std::string trimmed = trimTrailingLineBreaks(message);
+    if (trimmed.empty()) {
+        return;
+    }
+
+    writeEspLog(toEspLogLevel(level), trimmed);
+}
+
+void M5Autodetect::logPrintf(debug_t level, const char* format, ...) const {
+    if (_debug < level || !format) {
+        return;
+    }
+
+    va_list args;
+    va_start(args, format);
+    const std::string formatted = formatString(format, args);
+    va_end(args);
+
+    if (formatted.empty()) {
+        return;
+    }
+
+    if (_serial) {
+        _serial->write(reinterpret_cast<const uint8_t*>(formatted.data()), formatted.size());
+        return;
+    }
+
+    const std::string trimmed = trimTrailingLineBreaks(formatted);
+    if (trimmed.empty()) {
+        return;
+    }
+
+    writeEspLog(toEspLogLevel(level), trimmed);
 }
 
 static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& prereqs, 
@@ -207,11 +324,9 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
     int max_score = -1;
     int min_skip_count = 999;  // Lower is better (fewer skips = higher priority)
     
-    if (_debug >= debug_basic) {
-        DBG_PRINT("\r\n");
-        DBG_PRINT("=== Autodetect Start ===\r\n");
-        DBG_PRINTF("Chip Model: %s\r\n", chipModel.c_str());
-        DBG_PRINT("\r\n");
+    if (_debug >= debug_info) {
+        LOG_TEXT(debug_info, "=== Autodetect Start ===\r\n");
+        LOG_PRINTF(debug_info, "Chip Model: %s\r\n", chipModel.c_str());
     }
 
     for (const auto& device : m5::autodetect::devices_data) {
@@ -219,9 +334,9 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         int skip_count = 0;  // Track number of skipped steps (fewer = higher priority)
         bool step_failed = false;  // Track if any step failed
         
-        if (_debug >= debug_verbose) {
-            DBG_PRINT("-------------------\r\n");
-            DBG_PRINTF("Checking: %s (%s)\r\n", device.name, device.sku);
+        if (_debug >= debug_debug) {
+            LOG_TEXT(debug_debug, "-------------------\r\n");
+            LOG_PRINTF(debug_debug, "Checking: %s (%s)\r\n", device.name, device.sku);
         }
 
         // 1. SOC（严格按家族匹配，避免 ESP32-P4 命中经典 ESP32 条目）
@@ -236,20 +351,20 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
         if (soc_match) {
             current_score++;
-            if (_debug >= debug_verbose) DBG_PRINT("  [Pass] SOC Match (+1)\r\n");
+            if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Pass] SOC Match (+1)\r\n");
         } else {
-            if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] SOC Mismatch (Expected: %s, Got: %s)\r\n", device.mcu, chipModel.c_str());
+            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] SOC Mismatch (Expected: %s, Got: %s)\r\n", device.mcu, chipModel.c_str());
             continue;  // SOC mismatch, skip this device entirely
         }
 
-        // 1.5 PSRAM check (if device requires PSRAM, verify it's present)
+        // 1.5 PSRAM check: treat PSRAM as a weak signal because many users leave it disabled.
         bool psram_detected = psramFound() || ESP.getPsramSize() > 0;
         if (device.psram_enabled && !psram_detected) {
-            if (_debug >= debug_verbose) DBG_PRINT("  [Fail] PSRAM Required but not detected\r\n");
-            continue;  // Device requires PSRAM but not present
+            skip_count++;
+            if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Warn] PSRAM expected but not detected, continuing without bonus\r\n");
         } else if (device.psram_enabled && psram_detected) {
             current_score++;  // Bonus for matching PSRAM requirement
-            if (_debug >= debug_verbose) DBG_PRINT("  [Pass] PSRAM Match (+1)\r\n");
+            if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Pass] PSRAM Match (+1)\r\n");
         }
 
         // 2. IOMAP
@@ -271,15 +386,15 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             if (val == pinCheck.expect) {
                 pin_match_count++;
             } else {
-                if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Pin %d check failed. Expected %d, got %d\r\n", pinCheck.gpio, pinCheck.expect, val);
+                if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Pin %d check failed. Expected %d, got %d\r\n", pinCheck.gpio, pinCheck.expect, val);
             }
         }
         if (pin_match_count >= device.check_pins_count) {
             current_score++;
-            if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] IOMAP Match (+1) (%d/%d)\r\n", pin_match_count, device.check_pins_count);
+            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] IOMAP Match (+1) (%d/%d)\r\n", pin_match_count, device.check_pins_count);
         } else {
             step_failed = true;
-            if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] IOMAP Match (%d/%d)\r\n", pin_match_count, device.check_pins_count);
+            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] IOMAP Match (%d/%d)\r\n", pin_match_count, device.check_pins_count);
         }
 
         // 3. Internal I2C pins High
@@ -301,7 +416,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     }
                     if (digitalRead(i2c_bus.sda) == LOW || digitalRead(i2c_bus.scl) == LOW) {
                         i2c_pins_high = false;
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
                         break;
                     }
                 }
@@ -314,7 +429,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                         delay(1);
                         if (digitalRead(i2c_id.sda) == LOW || digitalRead(i2c_id.scl) == LOW) {
                             i2c_pins_high = false;
-                            if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_id.sda, i2c_id.scl);
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_id.sda, i2c_id.scl);
                             break;
                         }
                     }
@@ -322,14 +437,14 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 
                 if (i2c_pins_high) {
                     current_score++;
-                    if (_debug >= debug_verbose) DBG_PRINT("  [Pass] I2C Pins High (+1)\r\n");
+                    if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Pass] I2C Pins High (+1)\r\n");
                 } else {
                     step_failed = true;
                 }
             } else {
                 current_score++;  // Still add score
                 skip_count++;     // But count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No I2C Pins to check (+1)\r\n");
+                if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No I2C Pins to check (+1)\r\n");
             }
         }
 
@@ -361,7 +476,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                         bus_found_count++;
                         i2c_device_found_count++;
                     } else {
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] I2C Comm Failed at addr 0x%02X\r\n", detect.addr);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Comm Failed at addr 0x%02X\r\n", detect.addr);
                     }
                 }
                 
@@ -369,7 +484,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             
                 if (bus_found_count < i2c_bus.detect_count) {
                     i2c_comm_match = false;
-                    if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] I2C Bus Check Failed. Found %d, Needed %d\r\n", bus_found_count, i2c_bus.detect_count);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Bus Check Failed. Found %d, Needed %d\r\n", bus_found_count, i2c_bus.detect_count);
                     break;
                 }
             }
@@ -386,7 +501,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     i2c_device_found_count++;
                 } else {
                     i2c_comm_match = false;
-                    if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] I2C Comm Failed at addr 0x%02X\r\n", i2c_id.addr);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Comm Failed at addr 0x%02X\r\n", i2c_id.addr);
                 }
                 
                 if (!i2c_comm_match) break;
@@ -395,20 +510,19 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             if (i2c_device_total_count > 0) {
                 if (i2c_comm_match) {
                     current_score++;
-                    if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] I2C Comm Match (+1) (%d/%d)\r\n", i2c_device_found_count, i2c_device_required_count);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] I2C Comm Match (+1) (%d/%d)\r\n", i2c_device_found_count, i2c_device_required_count);
                 } else {
                     step_failed = true;
                 }
             } else {
                 current_score++;  // Still add score
                 skip_count++;     // But count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No I2C Comm to check (+1)\r\n");
+                if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No I2C Comm to check (+1)\r\n");
             }
         }
 
         // 4. Additional Tests
         if (!step_failed) {
-            bool additional_test_failed = false;
             for (const auto& test : device.additional_tests) {
                 bool pass = false;
                 switch (test.type) {
@@ -440,7 +554,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                                 if ((val & test.mask) == test.expect) {
                                     pass = true;
                                 } else {
-                                    if (_debug >= debug_verbose) DBG_PRINTF("    I2C Reg 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
+                                    if (_debug >= debug_verbose) LOG_PRINTF(debug_verbose, "    I2C Reg 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
                                 }
                             }
                         }
@@ -486,7 +600,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                                 if ((val & test.mask) == test.expect) {
                                     pass = true;
                                 } else {
-                                    if (_debug >= debug_verbose) DBG_PRINTF("    SPI Cmd 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
+                                    if (_debug >= debug_verbose) LOG_PRINTF(debug_verbose, "    SPI Cmd 0x%02X: Got 0x%02X, Exp 0x%02X\r\n", test.reg, val & test.mask, test.expect);
                                 }
                             }
                         }
@@ -495,10 +609,9 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 
                 if (pass) {
                     current_score += test.score;
-                    if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Additional Test %d (+%d)\r\n", test.type, test.score);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Additional Test %d (+%d)\r\n", test.type, test.score);
                 } else {
-                    additional_test_failed = true;
-                    if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Additional Test %d\r\n", test.type);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Additional Test %d\r\n", test.type);
                     break;  // Stop on first failed additional test
                 }
             }
@@ -507,7 +620,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             if (device.additional_tests.empty()) {
                 current_score++;
                 skip_count++;     // Count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Additional Tests (+1)\r\n");
+                if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No Additional Tests (+1)\r\n");
             }
         }
 
@@ -529,9 +642,9 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     if (i2c.endTransmission() == 0) {
                         touch_matched = true;
                         current_score++;
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Touch I2C Match (+1) (addr: 0x%02X)\r\n", touch.addr);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Touch I2C Match (+1) (addr: 0x%02X)\r\n", touch.addr);
                     } else {
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Touch I2C Failed (addr: 0x%02X)\r\n", touch.addr);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch I2C Failed (addr: 0x%02X)\r\n", touch.addr);
                     }
                     break;  // Only check first touch config
                 }
@@ -542,7 +655,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             } else if (!touch_checked) {
                 current_score++;  // No touch to check, give point
                 skip_count++;     // But count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Touch to check (+1)\r\n");
+                if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No Touch to check (+1)\r\n");
             }
         }
 
@@ -563,9 +676,9 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     if ((id & mask) == expect) {
                         screen_matched = true;
                         current_score++;
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
                     } else {
-                        if (_debug >= debug_verbose) DBG_PRINTF("  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
                     }
                 } else if (disp.bus_type != static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
                     // For non-SPI displays we don't have an ID probe path yet; treat as skip
@@ -578,17 +691,17 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             } else if (!screen_checked) {
                 current_score++;  // No screen to check, give point
                 skip_count++;     // But count as skip (lower priority)
-                if (_debug >= debug_verbose) DBG_PRINT("  [Skip] No Screen ID to check (+1)\r\n");
+                if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No Screen ID to check (+1)\r\n");
             }
         }
 
         if (step_failed) {
-            if (_debug >= debug_verbose) DBG_PRINT("  [Result] Failed at some step. Discarding.\r\n");
+            if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Result] Failed at some step. Discarding.\r\n");
             continue;
         }
 
-        if (_debug >= debug_verbose) {
-            DBG_PRINTF("  Total Score: %d (Skips: %d)\r\n", current_score, skip_count);
+        if (_debug >= debug_debug) {
+            LOG_PRINTF(debug_debug, "  Total Score: %d (Skips: %d)\r\n", current_score, skip_count);
         }
 
         // Compare: higher score wins, if equal score then fewer skips wins
@@ -600,17 +713,15 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         }
     }
     
-    if (_debug >= debug_basic) {
-        DBG_PRINT("\r\n");
-        DBG_PRINT("=== Detection Result ===\r\n");
+    if (_debug >= debug_info) {
+        LOG_TEXT(debug_info, "=== Detection Result ===\r\n");
         if (best_device) {
-            DBG_PRINTF("Best Match: %s (Score: %d, Skips: %d)\r\n", best_device->name, max_score, min_skip_count);
-            DBG_PRINTF("Board ID: %d (%s)\r\n", best_device->board_id, m5::autodetect::getBoardName(best_device->board_id));
-            DBG_PRINTF("SKU: %s\r\n", best_device->sku);
+            LOG_PRINTF(debug_info, "Best Match: %s (Score: %d, Skips: %d)\r\n", best_device->name, max_score, min_skip_count);
+            LOG_PRINTF(debug_info, "Board ID: %d (%s)\r\n", best_device->board_id, m5::autodetect::getBoardName(best_device->board_id));
+            LOG_PRINTF(debug_info, "SKU: %s\r\n", best_device->sku);
         } else {
-            DBG_PRINT("No matching device found.\r\n");
+            LOG_TEXT(debug_warn, "No matching device found.\r\n");
         }
-        DBG_PRINT("\r\n");
     }
 
     _device_info = best_device;
@@ -633,6 +744,30 @@ const char* M5Autodetect::getBoardName() const {
         return m5::autodetect::getBoardName(_device_info->board_id);
     }
     return "Unknown";
+}
+
+bool M5Autodetect::boardHasPsram() const {
+    return _device_info ? _device_info->psram_enabled : false;
+}
+
+bool M5Autodetect::isPsramDetected() const {
+    return psramFound() || ESP.getPsramSize() > 0;
+}
+
+const char* M5Autodetect::getPsramStatusText() const {
+    const bool board_has_psram = boardHasPsram();
+    const bool psram_detected = isPsramDetected();
+
+    if (board_has_psram && psram_detected) {
+        return "Present and enabled";
+    }
+    if (board_has_psram && !psram_detected) {
+        return "Present but not enabled";
+    }
+    if (!board_has_psram && psram_detected) {
+        return "Detected";
+    }
+    return "Not present";
 }
 
 m5::autodetect::Bus* M5Autodetect::createBus(const m5::autodetect::BusConfig& config) {

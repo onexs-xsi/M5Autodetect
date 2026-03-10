@@ -301,7 +301,7 @@ class M5HeaderGenerator:
         mcu_categories = data.get('mcu_categories', [])
         
         content = []
-        content.append('#include "M5Autodetect_Data.h"')
+        content.append('#include "M5Autodetect_DeviceData.h"')
         content.append("")
         content.append("namespace m5 {")
         content.append("namespace autodetect {")
@@ -628,7 +628,7 @@ if __name__ == "__main__":
     # Default paths
     current_dir = os.path.dirname(os.path.abspath(__file__))
     default_yaml = os.path.join(current_dir, 'm5stack_dev_config.yaml')
-    default_output = os.path.join(current_dir, '../src/M5Autodetect_Data.h')
+    default_output = os.path.join(current_dir, '../src/data/M5Autodetect_DeviceData.h')
     
     yaml_file = default_yaml
     output_file = default_output

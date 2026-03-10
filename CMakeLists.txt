@@ -1,9 +1,18 @@
 idf_component_register(
     SRCS
         "src/M5Autodetect.cpp"
-        "src/M5Autodetect_Bus.cpp"
-        "src/M5Autodetect_Data.cpp"
-        "src/M5Autodetect_SlefCheck.cpp"
+        "src/bus/M5Autodetect_I2CBus.cpp"
+        "src/bus/M5Autodetect_SPIBus.cpp"
+        "src/data/M5Autodetect_DeviceData.cpp"
+        "src/platform/M5Autodetect_IdfI2C.cpp"
+        "src/platform/M5Autodetect_IdfSPI.cpp"
+        "src/platform/M5Autodetect_Runtime.cpp"
+        "src/tools/M5Autodetect_SelfCheck.cpp"
     INCLUDE_DIRS
         "src"
+    REQUIRES
+        esp_driver_gpio
+        esp_driver_i2c
+        esp_driver_spi
+        esp_psram
 )

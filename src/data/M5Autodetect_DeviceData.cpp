@@ -1,4 +1,4 @@
-#include "M5Autodetect_Data.h"
+#include "M5Autodetect_DeviceData.h"
 
 namespace m5 {
 namespace autodetect {

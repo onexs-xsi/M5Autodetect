@@ -23,7 +23,7 @@ from M5Autodetect_CBuilder_GenCode import M5HeaderGenerator
 # Paths
 BASE_DIR = os.path.dirname(__file__)
 YAML_FILE = os.path.join(BASE_DIR, 'm5stack_dev_config.yaml')
-OUTPUT_FILE = os.path.join(BASE_DIR, '../src/M5Autodetect_Data.h')
+OUTPUT_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData.h')
 CACHE_DIR = os.path.join(BASE_DIR, '.cache')
 LOCALES_DIR = os.path.join(BASE_DIR, 'locales')
 
@@ -2326,7 +2326,7 @@ class M5BuilderGUI(QMainWindow):
         self._adjust_table_height(self.table_pins)
         
         chip_info = data.get('chip_model', 'Unknown')
-        psram_info = "有PSRAM" if data.get('psram_enabled', False) else "无PSRAM"
+        psram_info = "板型具备 PSRAM" if data.get('psram_enabled', False) else "板型不具备 PSRAM"
         filter_info = ["全部电平", "仅高电平", "仅低电平"][level_filter]
         QMessageBox.information(
             self,
@@ -2826,10 +2826,10 @@ class M5BuilderGUI(QMainWindow):
         self.edit_mcu.setEditable(True) # Allow custom MCU if not in list
         self.edit_mcu.setCurrentText(mcu_val.upper() if mcu_val else '')
         
-        self.edit_psram = QCheckBox(self.tr("启用 PSRAM"))
+        self.edit_psram = QCheckBox(self.tr("板型具备 PSRAM"))
         psram_val = bool(device_data.get('psram_enabled', False))
         self.edit_psram.setChecked(psram_val)
-        self.edit_psram.setToolTip(self.tr("设备具备PSRAM且启用时选中此项"))
+        self.edit_psram.setToolTip(self.tr("当该板型硬件具备 PSRAM 时选中此项；这不是运行时是否启用的状态。"))
         
         form_basic.addRow(self.tr("名称:"), self.edit_name)
         form_basic.addRow(self.tr("描述:"), self.edit_desc)
