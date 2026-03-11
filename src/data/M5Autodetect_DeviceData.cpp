@@ -128,15 +128,15 @@ const std::vector<DeviceInfo> devices_data = {
             { 44, 0, 1 },
         },
         {
-            { 0, 31, 32, 400000, 8, false, {
+            { 0, 31, 32, 400000, 7, false, {
                 { 0x10 },
                 { 0x32 },
                 { 0x40 },
                 { 0x41 },
                 { 0x43 },
                 { 0x44 },
-                { 0x68 },
                 { 0x55 },
+                { 0x68 },
             }, {
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, 0x30, 0 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, 0x30, 0 },

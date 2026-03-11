@@ -206,11 +206,11 @@ mcu_categories:
           addr: 67
         - name: Unknown_0x44
           addr: 68
-        - name: Unknown_0x68
-          addr: 104
         - name: Unknown_0x55
           addr: 85
-        detect_count: 8
+        - name: Unknown_0x68
+          addr: 104
+        detect_count: 7
         prerequisites:
         - type: i2c_write
           addr: 67
