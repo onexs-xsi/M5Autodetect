@@ -61,6 +61,7 @@ struct Prerequisite {
 
 struct I2CDetect {
     uint8_t addr;
+    bool required;  // true = must ACK; false = optional (absence is not a failure)
 };
 
 struct I2CBusCheck {

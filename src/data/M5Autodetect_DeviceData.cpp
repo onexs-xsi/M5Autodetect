@@ -17,8 +17,8 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 45, 0, 400000, 2, false, {
-                { 0x68 },
-                { 0x30 },
+                { 0x68, true },
+                { 0x30, true },
             }, {} },
         },
         {
@@ -44,7 +44,7 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 45, 0, 400000, 1, false, {
-                { 0x18 },
+                { 0x18, true },
             }, {} },
         },
         {
@@ -69,7 +69,7 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 38, 39, 400000, 1, false, {
-                { 0x68 },
+                { 0x68, true },
             }, {} },
         },
         {
@@ -112,14 +112,13 @@ const std::vector<DeviceInfo> devices_data = {
         "ESP32-P4",
         board_M5Tab5_ST7123,
         true,
-        12,
+        11,
         {
             { 21, 0, 1 },
             { 23, 0, 1 },
             { 29, 0, 1 },
             { 31, 0, 1 },
             { 32, 0, 1 },
-            { 33, 0, 1 },
             { 39, 0, 1 },
             { 40, 0, 1 },
             { 41, 0, 1 },
@@ -129,14 +128,14 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 31, 32, 400000, 7, false, {
-                { 0x10 },
-                { 0x32 },
-                { 0x40 },
-                { 0x41 },
-                { 0x43 },
-                { 0x44 },
-                { 0x55 },
-                { 0x68 },
+                { 0x10, true },
+                { 0x32, true },
+                { 0x40, true },
+                { 0x41, true },
+                { 0x43, true },
+                { 0x44, true },
+                { 0x55, true },
+                { 0x68, true },
             }, {
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, 0x30, 0 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, 0x30, 0 },
@@ -158,13 +157,12 @@ const std::vector<DeviceInfo> devices_data = {
         "ESP32-P4",
         board_M5Tab5_IlI9881c,
         true,
-        11,
+        10,
         {
             { 21, 0, 1 },
             { 29, 0, 1 },
             { 31, 0, 1 },
             { 32, 0, 1 },
-            { 33, 0, 0 },
             { 39, 0, 1 },
             { 40, 0, 1 },
             { 41, 0, 1 },
@@ -174,14 +172,14 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 31, 32, 400000, 8, false, {
-                { 0x10 },
-                { 0x32 },
-                { 0x40 },
-                { 0x41 },
-                { 0x43 },
-                { 0x44 },
-                { 0x68 },
-                { 0x14 },
+                { 0x10, true },
+                { 0x32, true },
+                { 0x40, true },
+                { 0x41, true },
+                { 0x43, true },
+                { 0x44, true },
+                { 0x68, true },
+                { 0x14, true },
             }, {
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, 0x30, 0 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, 0x30, 0 },
@@ -231,7 +229,7 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 25, 21, 400000, 1, false, {
-                { 0x68 },
+                { 0x68, true },
             }, {} },
         },
         {

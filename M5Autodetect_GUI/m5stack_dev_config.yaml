@@ -167,9 +167,6 @@ mcu_categories:
         32:
           mode: input
           expect: 1
-        33:
-          mode: input
-          expect: 1
         39:
           mode: input
           expect: 1
@@ -238,9 +235,6 @@ mcu_categories:
         32:
           mode: input
           expect: 1
-        33:
-          mode: input
-          expect: 0
         39:
           mode: input
           expect: 1

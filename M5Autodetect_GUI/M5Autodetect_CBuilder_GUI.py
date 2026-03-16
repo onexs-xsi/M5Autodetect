@@ -2475,12 +2475,15 @@ class M5BuilderGUI(QMainWindow):
         layout.addRow(lbl_detect)
         
         table_detect = QTableWidget()
-        table_detect.setColumnCount(2)
+        table_detect.setColumnCount(3)
         table_detect.setHorizontalHeaderLabels([
             self.tr("名称"),
-            self.tr("地址 (十六进制)")
+            self.tr("地址 (十六进制)"),
+            self.tr("必须")
         ])
-        table_detect.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
+        table_detect.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        table_detect.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        table_detect.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         table_detect.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
         
         table_detect.setRowCount(0)
@@ -2555,7 +2558,20 @@ class M5BuilderGUI(QMainWindow):
         le_addr.setText(original_addr)
         table.setCellWidget(row, 1, le_addr)
         self._register_change_highlight(le_addr, le_addr.textChanged, le_addr.text, original_addr)
-        
+
+        # Required checkbox (default True for backward compatibility)
+        required_val = bool(detect_data.get('required', True))
+        cb_required = QCheckBox()
+        cb_required.setChecked(required_val)
+        cb_required.setToolTip(self.tr("必须存在：勾选 = 必须 ACK，否则总线检测失败；\n取消勾选 = 可选，不存在不影响通过判断。"))
+        container = QWidget()
+        layout_center = QHBoxLayout(container)
+        layout_center.addWidget(cb_required)
+        layout_center.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        layout_center.setContentsMargins(0, 0, 0, 0)
+        table.setCellWidget(row, 2, container)
+        self._register_change_highlight(container, cb_required.stateChanged, cb_required.isChecked, required_val)
+
         self._adjust_table_height(table)
 
     def _delete_detect_row(self, table):
@@ -2631,10 +2647,20 @@ class M5BuilderGUI(QMainWindow):
                 for row in range(table.rowCount()):
                     name = table.cellWidget(row, 0).text()
                     addr_str = table.cellWidget(row, 1).text().strip()
+                    # Read required flag from the container widget's QCheckBox
+                    required = True
+                    container_w = table.cellWidget(row, 2)
+                    if container_w is not None:
+                        cb = container_w.findChild(QCheckBox)
+                        if cb is not None:
+                            required = cb.isChecked()
                     if addr_str:
                         try:
                             addr = int(addr_str, 16) if addr_str.lower().startswith('0x') else int(addr_str)
-                            bus_data['detect'].append({'name': name, 'addr': addr})
+                            entry = {'name': name, 'addr': addr}
+                            if not required:  # Only write when false (true is default, keep YAML clean)
+                                entry['required'] = False
+                            bus_data['detect'].append(entry)
                         except ValueError:
                             pass
                 

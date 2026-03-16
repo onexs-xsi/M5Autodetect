@@ -469,22 +469,30 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 }
                 
                 int bus_found_count = 0;
+                bool bus_required_all_found = true;
+                int bus_required_count = 0;
                 for (const auto& detect : i2c_bus.detect) {
                     i2c_device_total_count++;
+                    if (detect.required) bus_required_count++;
                     i2c.beginTransmission(detect.addr);
                     if (i2c.endTransmission() == 0) {
                         bus_found_count++;
                         i2c_device_found_count++;
                     } else {
-                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Comm Failed at addr 0x%02X\r\n", detect.addr);
+                        if (detect.required) {
+                            bus_required_all_found = false;
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Required device not found at addr 0x%02X\r\n", detect.addr);
+                        } else {
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Info] I2C Optional device not found at addr 0x%02X\r\n", detect.addr);
+                        }
                     }
                 }
                 
-                i2c_device_required_count += i2c_bus.detect_count;
+                i2c_device_required_count += bus_required_count;
             
-                if (bus_found_count < i2c_bus.detect_count) {
+                if (!bus_required_all_found || bus_found_count < i2c_bus.detect_count) {
                     i2c_comm_match = false;
-                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Bus Check Failed. Found %d, Needed %d\r\n", bus_found_count, i2c_bus.detect_count);
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Bus Check Failed. Found %d/%d, All-required: %s\r\n", bus_found_count, i2c_bus.detect_count, bus_required_all_found ? "yes" : "no");
                     break;
                 }
             }

@@ -166,6 +166,7 @@ class M5HeaderGenerator:
 
         content.append("struct I2CDetect {")
         content.append("    uint8_t addr;")
+        content.append("    bool required;  // true = must ACK; false = optional (absence is not a failure)")
         content.append("};")
         content.append("")
 
@@ -465,7 +466,8 @@ class M5HeaderGenerator:
                         scl = i2c.get('scl', -1)
                         freq = i2c.get('freq', 400000)
                         detect = i2c.get('detect', [])
-                        detect_count = i2c.get('detect_count', len(detect))
+                        required_count = sum(1 for d in detect if d.get('required', True))
+                        detect_count = i2c.get('detect_count', required_count)
                         internal_pullup = "true" if i2c.get('internal_pullup', False) else "false"
                         prereqs = i2c.get('prerequisites', [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
@@ -473,7 +475,8 @@ class M5HeaderGenerator:
                         content.append(f"            {{ {port}, {sda}, {scl}, {freq}, {detect_count}, {internal_pullup}, {{")
                         for d in detect:
                             addr = M5HeaderGenerator._parse_int(d.get('addr', 0))
-                            content.append(f"                {{ 0x{addr:02X} }},")
+                            required = "true" if d.get('required', True) else "false"
+                            content.append(f"                {{ 0x{addr:02X}, {required} }},")
                         content.append(f"            }}, {prereq_str} }},")
                     content.append("        },")
 
