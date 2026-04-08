@@ -203,8 +203,6 @@ mcu_categories:
           addr: 67
         - name: Unknown_0x44
           addr: 68
-        - name: Unknown_0x55
-          addr: 85
         - name: Unknown_0x68
           addr: 104
         detect_count: 7
