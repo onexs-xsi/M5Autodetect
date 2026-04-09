@@ -49,6 +49,34 @@ from PyQt6.QtGui import QFont, QIcon, QPixmap, QColor, QPainter, QPen, QBrush, Q
 from PyQt6.QtCore import Qt, QSize, QRect, QTimer, QTranslator, QLocale, QCoreApplication
 from M5Autodetect_CBuilder_GenCode import M5HeaderGenerator
 
+# ── Extracted modules (in src/) ───────────────────────────────────
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), 'src'))
+from M5Autodetect_Widgets import (
+    DeviceItemDelegate, DictTranslator,
+    NoScrollSpinBox, NoScrollComboBox, PinValueEditor, FloatingButtonWidget,
+)
+from M5Autodetect_EditorUtils import (
+    parse_int_or_hex as _parse_int_or_hex_fn,
+    int_to_hex_str as _int_to_hex_str_fn,
+    normalize_struct as _normalize_struct_fn,
+    set_combo_items as _set_combo_items_fn,
+    register_change_highlight as _register_change_highlight_fn,
+    adjust_table_height as _adjust_table_height_fn,
+    read_pin_widget_value as _read_pin_widget_value_fn,
+    collect_pin_table_values as _collect_pin_table_values_fn,
+    delete_editor_from_list as _delete_editor_from_list_fn,
+    get_display_probe_options as _get_display_probe_options_fn,
+    get_touch_probe_options as _get_touch_probe_options_fn,
+    build_probe_hint as _build_probe_hint_fn,
+    infer_display_probe as _infer_display_probe_fn,
+    infer_touch_probe as _infer_touch_probe_fn,
+)
+from M5Autodetect_EditorPrereq import PrereqEditorManager
+from M5Autodetect_EditorDisplay import DisplayEditorManager
+from M5Autodetect_EditorTouch import TouchEditorManager
+from M5Autodetect_EditorI2CPin import I2CPinEditorManager
+from M5Autodetect_DiffChanges import DiffChangesManager
+
 # Paths
 BASE_DIR = os.path.dirname(__file__)
 YAML_FILE = os.path.join(BASE_DIR, 'm5stack_dev_config.yaml')
@@ -56,156 +84,6 @@ OUTPUT_HEADER_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData
 OUTPUT_SOURCE_FILE = os.path.join(BASE_DIR, '../src/data/M5Autodetect_DeviceData.cpp')
 CACHE_DIR = os.path.join(BASE_DIR, '.cache')
 LOCALES_DIR = os.path.join(BASE_DIR, 'locales')
-
-class DeviceItemDelegate(QStyledItemDelegate):
-    def paint(self, painter, option, index):
-        # Draw background if selected or hovered
-        if option.state & QStyle.StateFlag.State_Selected:
-            painter.save()
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            pen = QPen(QColor("#007ACC"), 3)
-            painter.setPen(pen)
-            painter.setBrush(Qt.BrushStyle.NoBrush)
-            painter.drawRoundedRect(option.rect.adjusted(2, 2, -2, -2), 10, 10)
-            painter.restore()
-        elif option.state & QStyle.StateFlag.State_MouseOver:
-            painter.fillRect(option.rect, option.palette.light())
-
-        # Get data
-        icon = index.data(Qt.ItemDataRole.DecorationRole)
-        name = index.data(Qt.ItemDataRole.DisplayRole)
-        sku = index.data(Qt.ItemDataRole.UserRole).get('sku', '')
-        eol_status = index.data(Qt.ItemDataRole.UserRole).get('eol', '')
-
-        rect = option.rect
-        
-        # Draw Icon
-        icon_size = 100
-        icon_rect = QRect(rect.left() + (rect.width() - icon_size) // 2, rect.top() + 10, icon_size, icon_size)
-        if icon:
-            icon.paint(painter, icon_rect)
-
-        # Draw Name
-        painter.save()
-        painter.setFont(QFont("Arial", 10, QFont.Weight.Bold))
-        name_rect = QRect(rect.left(), icon_rect.bottom() + 5, rect.width(), 20)
-        painter.drawText(name_rect, Qt.AlignmentFlag.AlignCenter, name)
-        painter.restore()
-
-        # Draw SKU
-        if sku:
-            painter.save()
-            painter.setFont(QFont("Arial", 8))
-            
-            # Determine color based on EOL status
-            if eol_status == 'EOL':
-                painter.setPen(QColor("#555555")) # Grey-black for EOL
-            elif eol_status == 'SALE':
-                painter.setPen(QColor("#00008B")) # Dark Blue for SALE
-            else:
-                painter.setPen(QColor("#007ACC")) # Default Blue
-                
-            sku_rect = QRect(rect.left(), name_rect.bottom(), rect.width(), 15)
-            painter.drawText(sku_rect, Qt.AlignmentFlag.AlignCenter, sku)
-            painter.restore()
-
-        # Draw EOL Label
-        if eol_status == 'EOL':
-            painter.save()
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-            painter.setFont(QFont("Arial", 12, QFont.Weight.Bold))
-            painter.setPen(QColor("#2F495E"))
-            
-            # Position at top-right corner
-            painter.translate(rect.right() - 25, rect.top() + 25)
-            painter.rotate(45)
-            eol_text = QCoreApplication.translate("DeviceItemDelegate", "EOL")
-            painter.drawText(QRect(-30, -15, 60, 30), Qt.AlignmentFlag.AlignCenter, eol_text)
-            painter.restore()
-
-    def sizeHint(self, option, index):
-        return QSize(140, 160)
-
-
-class DictTranslator(QTranslator):
-    """Minimal translator that maps source text directly to translations."""
-
-    def __init__(self, catalog):
-        super().__init__()
-        self._catalog = catalog or {}
-
-    def translate(self, context, sourceText, disambiguation=None, n=-1):
-        if not sourceText:
-            return ""
-        return self._catalog.get(sourceText, sourceText)
-
-
-class NoScrollSpinBox(QSpinBox):
-    """SpinBox that ignores mouse wheel to avoid accidental changes."""
-
-    def wheelEvent(self, event):
-        event.ignore()
-
-
-class NoScrollComboBox(QComboBox):
-    """ComboBox that ignores mouse wheel to avoid accidental changes."""
-
-    def wheelEvent(self, event):
-        event.ignore()
-
-class FloatingButtonWidget(QWidget):
-    def __init__(self, parent=None):
-        super().__init__(parent)
-        
-        # Main layout for content
-        self.content_layout = QVBoxLayout(self)
-        self.content_layout.setContentsMargins(0, 0, 0, 0)
-        
-        # The floating button (child of self, not added to layout)
-        self.btn_apply = QPushButton(self.tr("💾 保存修改"), self)
-        self.btn_apply.setStyleSheet("""
-            QPushButton {
-                background-color: #2196F3; 
-                color: white; 
-                font-weight: bold; 
-                padding: 12px 24px;
-                border-radius: 25px;
-                font-size: 14px;
-                border: 2px solid #1976D2;
-                min-width: 100px;
-            }
-            QPushButton:hover {
-                background-color: #42A5F5;
-            }
-            QPushButton:pressed {
-                background-color: #1E88E5;
-            }
-        """)
-        self.btn_apply.setCursor(Qt.CursorShape.PointingHandCursor)
-        
-        # Add shadow effect
-        shadow = QGraphicsDropShadowEffect(self)
-        shadow.setBlurRadius(20)
-        shadow.setColor(QColor(0, 0, 0, 80))
-        shadow.setOffset(0, 5)
-        self.btn_apply.setGraphicsEffect(shadow)
-        
-        self.btn_apply.hide()
-
-    def resizeEvent(self, event):
-        super().resizeEvent(event)
-        # Position button at bottom right with margin
-        margin_right = 40
-        margin_bottom = 40
-        btn_w = 140
-        btn_h = 50
-        
-        self.btn_apply.setGeometry(
-            self.width() - btn_w - margin_right,
-            self.height() - btn_h - margin_bottom,
-            btn_w, btn_h
-        )
-        self.btn_apply.raise_()
 
 class M5BuilderGUI(QMainWindow):
     HIGHLIGHT_STYLE = "background-color: #DFF7E0;"
@@ -337,36 +215,21 @@ class M5BuilderGUI(QMainWindow):
         self.language_selector.blockSignals(False)
         self.apply_language(self.language_selector.currentData())
         
+        # ── Managers (extracted modules) ──
+        self._display_mgr = DisplayEditorManager(self)
+        self._touch_mgr = TouchEditorManager(self)
+        self._i2c_pin_mgr = I2CPinEditorManager(self)
+        self._diff_mgr = DiffChangesManager(self)
+
         # Load initial data
         self.load_yaml()
         print("GUI Initialized successfully")
 
     def _register_change_highlight(self, widget, signal, getter, original_value):
-        """Apply highlight style when widget value changes from original."""
-        if widget is None or signal is None:
-            return
-
-        highlight_style = self.HIGHLIGHT_STYLE
-
-        def update_highlight(*_):
-            try:
-                current = getter()
-            except Exception:
-                current = None
-            widget.setStyleSheet(highlight_style if current != original_value else "")
-
-        signal.connect(update_highlight)
-        update_highlight()
+        _register_change_highlight_fn(widget, signal, getter, original_value)
 
     def _normalize_struct(self, value):
-        if value is None:
-            return ""
-        if isinstance(value, (dict, list)):
-            try:
-                return yaml.dump(value, sort_keys=True, allow_unicode=True)
-            except Exception:
-                return str(value)
-        return str(value).strip()
+        return _normalize_struct_fn(value)
 
     def _compose_variant_display_name(self, base_name, variant_name):
         base = str(base_name or self.tr('Unknown Device'))
@@ -407,6 +270,36 @@ class M5BuilderGUI(QMainWindow):
     def _variant_text_brush(self, variant_data):
         return QBrush(QColor('#000000'))
 
+    def _set_combo_items(self, combo, options, current_value=None):
+        _set_combo_items_fn(combo, options, current_value)
+
+    def _get_display_probe_options(self, bus_type):
+        return _get_display_probe_options_fn(self.tr, bus_type)
+
+    def _get_touch_probe_options(self, bus_type):
+        return _get_touch_probe_options_fn(self.tr, bus_type)
+
+    def _build_probe_hint(self, target, probe_type):
+        return _build_probe_hint_fn(self.tr, target, probe_type)
+
+    def _infer_display_probe(self, display_data, bus_type):
+        return _infer_display_probe_fn(display_data, bus_type)
+
+    def _infer_touch_probe(self, touch_data, bus_type):
+        return _infer_touch_probe_fn(touch_data, bus_type)
+
+    def _read_pin_widget_value(self, widget):
+        return _read_pin_widget_value_fn(widget)
+
+    def _collect_pin_table_values(self, table):
+        return _collect_pin_table_values_fn(table)
+
+    def _serialize_display_editor(self, editor):
+        return self._display_mgr.serialize(editor)
+
+    def _serialize_touch_editor(self, editor):
+        return self._touch_mgr.serialize(editor)
+
     def _refresh_config_selector(self):
         base_name = str(self.device_data.get('name') or self.tr('Unknown Device'))
         variants = self.device_data.get('variants', [])
@@ -437,489 +330,51 @@ class M5BuilderGUI(QMainWindow):
 
         return overrides
 
+    # ── Change detection (delegated to DiffChangesManager) ────────
     def _collect_device_changes(self, old_data, new_data):
-        if not isinstance(old_data, dict):
-            old_data = {}
-        if not isinstance(new_data, dict):
-            new_data = {}
-        change_lines = []
+        return self._diff_mgr.collect_device_changes(old_data, new_data)
 
-        field_labels = {
-            'name': self.tr('名称'),
-            'description': self.tr('描述'),
-            'sku': 'SKU',
-            'eol': self.tr('EOL 状态'),
-            'image': self.tr('图片链接'),
-            'docs': self.tr('文档链接'),
-            'mcu': 'MCU'
-        }
-        empty_placeholder = self.tr('[空]')
-
-        for key, label in field_labels.items():
-            old_val = str(old_data.get(key) or '').strip()
-            new_val = str(new_data.get(key) or '').strip()
-            if old_val != new_val:
-                change_lines.append(
-                    self.tr("{label}: {old} → {new}").format(
-                        label=label,
-                        old=old_val or empty_placeholder,
-                        new=new_val or empty_placeholder
-                    )
-                )
-
-        # Check PSRAM enabled (boolean field)
-        old_psram = bool(old_data.get('psram_enabled', False))
-        new_psram = bool(new_data.get('psram_enabled', False))
-        if old_psram != new_psram:
-            old_text = self.tr("启用") if old_psram else self.tr("禁用")
-            new_text = self.tr("启用") if new_psram else self.tr("禁用")
-            change_lines.append(
-                self.tr("{label}: {old} → {new}").format(
-                    label=self.tr("PSRAM 启用"),
-                    old=old_text,
-                    new=new_text
-                )
-            )
-
-        # Check complex fields with detailed diff
-        self._check_pins_changes(old_data, new_data, change_lines)
-        self._check_i2c_changes(old_data, new_data, change_lines)
-        self._check_display_changes(old_data, new_data, change_lines)
-        self._check_touch_changes(old_data, new_data, change_lines)
-        self._check_variants_changes(old_data, new_data, change_lines)
-        self._check_additional_tests_changes(old_data, new_data, change_lines)
-
-        return change_lines
-    
     def _check_additional_tests_changes(self, old_data, new_data, change_lines):
-        old_tests = old_data.get('additional_tests', [])
-        new_tests = new_data.get('additional_tests', [])
-        
-        if self._normalize_struct(old_tests) != self._normalize_struct(new_tests):
-            if isinstance(new_tests, list) and isinstance(old_tests, list):
-                change_lines.append(
-                    self.tr("额外测试数量: {old} → {new}").format(
-                        old=len(old_tests),
-                        new=len(new_tests)
-                    )
-                )
-            else:
-                change_lines.append(self.tr("额外测试配置已更新"))
+        return self._diff_mgr._check_additional_tests_changes(old_data, new_data, change_lines)
 
-        return change_lines
-    
     def _check_identify_i2c_changes(self, old_data, new_data, change_lines):
-        old_val = old_data.get('identify_i2c', [])
-        new_val = new_data.get('identify_i2c', [])
-        if self._normalize_struct(old_val) != self._normalize_struct(new_val):
-            change_lines.append(self.tr("identify_i2c 配置已更新"))
+        return self._diff_mgr._check_identify_i2c_changes(old_data, new_data, change_lines)
 
     def _check_tests_changes(self, old_data, new_data, change_lines):
-        old_tests = old_data.get('tests', [])
-        new_tests = new_data.get('tests', [])
-        if self._normalize_struct(old_tests) != self._normalize_struct(new_tests):
-            if isinstance(new_tests, list) and isinstance(old_tests, list):
-                change_lines.append(
-                    self.tr("测试项数量: {old} → {new}").format(
-                        old=len(old_tests),
-                        new=len(new_tests)
-                    )
-                )
-            else:
-                change_lines.append(self.tr("测试项配置已更新"))
+        return self._diff_mgr._check_tests_changes(old_data, new_data, change_lines)
 
     def _check_variants_changes(self, old_data, new_data, change_lines):
-        old_val = old_data.get('variants', [])
-        new_val = new_data.get('variants', [])
-        if self._normalize_struct(old_val) != self._normalize_struct(new_val):
-            change_lines.append(
-                self.tr("变体配置已更新: {old} → {new}").format(
-                    old=len(old_val),
-                    new=len(new_val)
-                )
-            )
-    
+        return self._diff_mgr._check_variants_changes(old_data, new_data, change_lines)
+
     def _check_pins_changes(self, old_data, new_data, change_lines):
-        old_pins = old_data.get('check_pins', {})
-        new_pins = new_data.get('check_pins', {})
-        
-        # Check count
-        old_count = old_data.get('check_pins_count')
-        new_count = new_data.get('check_pins_count')
-        if old_count != new_count:
-            change_lines.append(
-                self.tr("检测引脚通过数量: {old} → {new}").format(
-                    old=old_count,
-                    new=new_count
-                )
-            )
+        return self._diff_mgr._check_pins_changes(old_data, new_data, change_lines)
 
-        if not isinstance(old_pins, dict):
-            old_pins = {}
-        if not isinstance(new_pins, dict):
-            new_pins = {}
-        
-        # Helper to normalize keys
-        def normalize_keys(d):
-            new_d = {}
-            for k, v in d.items():
-                try:
-                    key = int(k)
-                except (ValueError, TypeError):
-                    key = k
-                new_d[key] = v
-            return new_d
-
-        old_pins_norm = normalize_keys(old_pins)
-        new_pins_norm = normalize_keys(new_pins)
-        
-        all_keys = set(old_pins_norm.keys()) | set(new_pins_norm.keys())
-        
-        # Sort keys
-        def sort_key(k):
-            if isinstance(k, int):
-                return k
-            if isinstance(k, str) and k.isdigit():
-                return int(k)
-            return 0
-            
-        sorted_keys = sorted(list(all_keys), key=sort_key)
-        
-        for key in sorted_keys:
-            old_pin = old_pins_norm.get(key)
-            new_pin = new_pins_norm.get(key)
-            
-            if old_pin is not None and new_pin is not None:
-                # Check for changes
-                old_mode = old_pin.get('mode', 'input')
-                old_expect = old_pin.get('expect', 0)
-                new_mode = new_pin.get('mode', 'input')
-                new_expect = new_pin.get('expect', 0)
-                
-                if old_mode != new_mode or old_expect != new_expect:
-                    change_lines.append(
-                        self.tr("检测引脚: GPIO{gpio}({old_mode}={old_expect}) → GPIO{gpio}({new_mode}={new_expect})").format(
-                            gpio=key,
-                            old_mode=old_mode,
-                            old_expect=old_expect,
-                            new_mode=new_mode,
-                            new_expect=new_expect
-                        )
-                    )
-            elif old_pin is not None:
-                # Removed
-                old_mode = old_pin.get('mode', 'input')
-                old_expect = old_pin.get('expect', 0)
-                change_lines.append(
-                    self.tr("检测引脚: GPIO{gpio}({mode}={expect}) → [已删除]").format(
-                        gpio=key,
-                        mode=old_mode,
-                        expect=old_expect
-                    )
-                )
-            else:
-                # Added
-                new_mode = new_pin.get('mode', 'input')
-                new_expect = new_pin.get('expect', 0)
-                change_lines.append(
-                    self.tr("检测引脚: [新增] → GPIO{gpio}({mode}={expect})").format(
-                        gpio=key,
-                        mode=new_mode,
-                        expect=new_expect
-                    )
-                )
-    
     def _check_i2c_changes(self, old_data, new_data, change_lines):
-        old_i2c_list = old_data.get('i2c_internal', [])
-        new_i2c_list = new_data.get('i2c_internal', [])
-        
-        if not isinstance(old_i2c_list, list):
-            old_i2c_list = []
-        if not isinstance(new_i2c_list, list):
-            new_i2c_list = []
+        return self._diff_mgr._check_i2c_changes(old_data, new_data, change_lines)
 
-        # Helper to map by port
-        def map_by_port(i2c_list):
-            mapping = {}
-            for item in i2c_list:
-                if isinstance(item, dict):
-                    port = item.get('port', 0)
-                    mapping[port] = item
-            return mapping
-
-        old_map = map_by_port(old_i2c_list)
-        new_map = map_by_port(new_i2c_list)
-        
-        all_ports = sorted(set(old_map.keys()) | set(new_map.keys()))
-        
-        for port in all_ports:
-            old_bus = old_map.get(port)
-            new_bus = new_map.get(port)
-            
-            if old_bus and new_bus:
-                # Check bus config changes
-                changes = []
-                if old_bus.get('sda') != new_bus.get('sda'):
-                    changes.append(
-                        self.tr("SDA: {old}→{new}").format(
-                            old=old_bus.get('sda'),
-                            new=new_bus.get('sda')
-                        )
-                    )
-                if old_bus.get('scl') != new_bus.get('scl'):
-                    changes.append(
-                        self.tr("SCL: {old}→{new}").format(
-                            old=old_bus.get('scl'),
-                            new=new_bus.get('scl')
-                        )
-                    )
-                if old_bus.get('freq') != new_bus.get('freq'):
-                    changes.append(
-                        self.tr("频率: {old}→{new}").format(
-                            old=old_bus.get('freq'),
-                            new=new_bus.get('freq')
-                        )
-                    )
-                if old_bus.get('internal_pullup', False) != new_bus.get('internal_pullup', False):
-                    changes.append(
-                        self.tr("内部上拉: {old}→{new}").format(
-                            old=self.tr("是") if old_bus.get('internal_pullup', False) else self.tr("否"),
-                            new=self.tr("是") if new_bus.get('internal_pullup', False) else self.tr("否")
-                        )
-                    )
-                
-                if changes:
-                    change_lines.append(
-                        self.tr("内部 I2C Port{port}: {changes}").format(
-                            port=port,
-                            changes=", ".join(changes)
-                        )
-                    )
-                
-                # Check detect count
-                old_detect_count = old_bus.get('detect_count')
-                new_detect_count = new_bus.get('detect_count')
-                if old_detect_count != new_detect_count:
-                    change_lines.append(
-                        self.tr("内部 I2C Port{port} 检测通过数量: {old} → {new}").format(
-                            port=port,
-                            old=old_detect_count,
-                            new=new_detect_count
-                        )
-                    )
-
-                # Check detected devices
-                old_detect = old_bus.get('detect', [])
-                new_detect = new_bus.get('detect', [])
-                
-                # Map devices by address for better comparison
-                def map_detects(detect_list):
-                    d_map = {}
-                    for d in detect_list:
-                        if isinstance(d, dict):
-                            addr = d.get('addr')
-                            if addr is not None:
-                                d_map[addr] = d
-                    return d_map
-
-                old_d_map = map_detects(old_detect)
-                new_d_map = map_detects(new_detect)
-                
-                all_addrs = sorted(set(old_d_map.keys()) | set(new_d_map.keys()))
-                
-                for addr in all_addrs:
-                    old_d = old_d_map.get(addr)
-                    new_d = new_d_map.get(addr)
-                    
-                    addr_hex = f"0x{addr:02X}"
-                    
-                    if old_d and new_d:
-                        if old_d.get('name') != new_d.get('name'):
-                            change_lines.append(
-                                self.tr("内部 I2C Port{port} 设备 {addr}: 名称 '{old}' → '{new}'").format(
-                                    port=port,
-                                    addr=addr_hex,
-                                    old=old_d.get('name'),
-                                    new=new_d.get('name')
-                                )
-                            )
-                    elif old_d:
-                        change_lines.append(
-                            self.tr("内部 I2C Port{port} 设备: [删除] {addr} ({name})").format(
-                                port=port,
-                                addr=addr_hex,
-                                name=old_d.get('name')
-                            )
-                        )
-                    else:
-                        change_lines.append(
-                            self.tr("内部 I2C Port{port} 设备: [新增] {addr} ({name})").format(
-                                port=port,
-                                addr=addr_hex,
-                                name=new_d.get('name')
-                            )
-                        )
-
-            elif old_bus:
-                # Bus removed
-                change_lines.append(
-                    self.tr("内部 I2C Port{port}: [已删除]").format(port=port)
-                )
-            else:
-                # Bus added
-                change_lines.append(
-                    self.tr("内部 I2C Port{port}: [新增] (SDA:{sda} SCL:{scl})").format(
-                        port=port,
-                        sda=new_bus.get('sda'),
-                        scl=new_bus.get('scl')
-                    )
-                )
-    
     def _check_display_changes(self, old_data, new_data, change_lines):
-        old_display = old_data.get('display', [])
-        new_display = new_data.get('display', [])
-        
-        if self._normalize_struct(old_display) != self._normalize_struct(new_display):
-            if isinstance(new_display, list) and isinstance(old_display, list):
-                change_lines.append(
-                    self.tr("显示屏配置项数量: {old} → {new}").format(
-                        old=len(old_display),
-                        new=len(new_display)
-                    )
-                )
-            else:
-                change_lines.append(self.tr("显示屏配置已更新"))
-    
+        return self._diff_mgr._check_display_changes(old_data, new_data, change_lines)
+
     def _check_touch_changes(self, old_data, new_data, change_lines):
-        old_touch = old_data.get('touch', [])
-        new_touch = new_data.get('touch', [])
-        
-        if self._normalize_struct(old_touch) != self._normalize_struct(new_touch):
-            if isinstance(new_touch, list) and isinstance(old_touch, list):
-                change_lines.append(
-                    self.tr("触摸配置项数量: {old} → {new}").format(
-                        old=len(old_touch),
-                        new=len(new_touch)
-                    )
-                )
-            else:
-                change_lines.append(self.tr("触摸配置已更新"))
+        return self._diff_mgr._check_touch_changes(old_data, new_data, change_lines)
 
     def _build_changes_html(self, change_lines):
-        if not change_lines:
-            return ""
-        rows = []
-        for line in change_lines:
-            rows.append(
-                f"<li><span style='background-color:#FFCDD2;padding:4px 8px;border-radius:6px;display:block;margin-bottom:6px;'>{html.escape(line)}</span></li>"
-            )
-        header_html = self.tr("<p>以下字段将被保存：</p>")
-        return header_html + "<ul>" + "".join(rows) + "</ul>"
+        return self._diff_mgr.build_changes_html(change_lines)
 
     def _show_change_dialog(self, title, body_html):
-        if not body_html:
-            return True
-
-        box = QMessageBox(self)
-        box.setWindowTitle(title)
-        box.setIcon(QMessageBox.Icon.Warning)
-        box.setTextFormat(Qt.TextFormat.RichText)
-        box.setText(body_html)
-        box.setStandardButtons(QMessageBox.StandardButton.Ok | QMessageBox.StandardButton.Cancel)
-        box.setDefaultButton(QMessageBox.StandardButton.Ok)
-        return box.exec() == QMessageBox.StandardButton.Ok
+        return self._diff_mgr.show_change_dialog(title, body_html)
 
     def _collect_all_changes(self, candidate_data=None):
-        target_data = candidate_data or self.current_yaml_data
-        if not target_data:
-            return {}
-
-        base_source = self.base_yaml_data or {}
-        base_categories = base_source.get('mcu_categories', [])
-        current_categories = target_data.get('mcu_categories', []) if isinstance(target_data, dict) else []
-        summary = {}
-
-        base_map = {cat.get('mcu'): cat for cat in base_categories if isinstance(cat, dict) and cat.get('mcu')}
-
-        for current_cat in current_categories:
-            if not isinstance(current_cat, dict):
-                continue
-            mcu_name = current_cat.get('mcu') or self.tr('Unknown MCU')
-            base_cat = base_map.get(mcu_name, {})
-            base_devices = base_cat.get('devices', []) if isinstance(base_cat, dict) else []
-            current_devices = current_cat.get('devices', [])
-            if not isinstance(current_devices, list):
-                current_devices = []
-
-            base_dev_map = {dev.get('name'): dev for dev in base_devices if isinstance(dev, dict) and dev.get('name')}
-
-            for current_dev in current_devices:
-                if not isinstance(current_dev, dict):
-                    continue
-                dev_key = current_dev.get('name')
-                dev_name = dev_key or self.tr('Unknown Device')
-                base_dev = base_dev_map.get(dev_key)
-                changes = self._collect_device_changes(base_dev or {}, current_dev)
-                if changes:
-                    summary.setdefault(mcu_name, {})[dev_name] = changes
-
-        return summary
+        return self._diff_mgr.collect_all_changes(candidate_data)
 
     def _build_grouped_changes_html(self, summary):
-        if not summary:
-            return ""
-
-        sections = []
-        for mcu, devices in summary.items():
-            device_rows = []
-            for device_name, changes in devices.items():
-                change_list = ''.join(
-                    f"<li><span style='background-color:#FFCDD2;padding:3px 6px;border-radius:4px;display:block;margin-bottom:4px;'>{html.escape(c)}</span></li>"
-                    for c in changes
-                )
-                device_rows.append(
-                    f"<div style='margin-bottom:10px;'><strong>{html.escape(device_name)}</strong><ul style='margin-top:4px;'>" + change_list + "</ul></div>"
-                )
-            sections.append(
-                f"<div style='margin-bottom:14px;'><h4 style='margin-bottom:6px;'>{html.escape(mcu)}</h4>" + "".join(device_rows) + "</div>"
-            )
-        
-        header_html = self.tr("<p>以下设备将被修改：</p>")
-        return header_html + "".join(sections)
+        return self._diff_mgr.build_grouped_changes_html(summary)
 
     def _confirm_device_changes(self, old_data, new_data):
-        change_lines = self._collect_device_changes(old_data, new_data)
-        if not change_lines:
-            QMessageBox.information(
-                self,
-                self.tr("无变更"),
-                self.tr("当前没有任何修改，无需保存。")
-            )
-            return False
-
-        body_html = self._build_changes_html(change_lines)
-        return self._show_change_dialog(self.tr("保存前确认"), body_html)
+        return self._diff_mgr.confirm_device_changes(old_data, new_data)
 
     def _confirm_full_yaml_changes(self, candidate_data=None):
-        summary = self._collect_all_changes(candidate_data)
-        base_snapshot = self.base_yaml_data or {}
-        candidate_snapshot = candidate_data or {}
-        if not summary and base_snapshot != candidate_snapshot:
-            summary = {
-                self.tr('整体'): {
-                    self.tr('YAML 配置'): [self.tr('整体结构发生变化')]
-                }
-            }
-        if not summary:
-            QMessageBox.information(
-                self,
-                self.tr("无变更"),
-                self.tr("当前 YAML 没有任何改动。")
-            )
-            return False
-
-        html_body = self._build_grouped_changes_html(summary)
-        return self._show_change_dialog(self.tr("写入 YAML 前确认"), html_body)
+        return self._diff_mgr.confirm_full_yaml_changes(candidate_data)
 
     def get_cached_image(self, url):
         """Download image from URL and cache it locally, return QPixmap"""
@@ -1344,1241 +799,58 @@ class M5BuilderGUI(QMainWindow):
         return editor_dict
 
     def _add_identify_i2c_editor(self, parent_layout, id_i2c_data, editor_list):
-        widget = QGroupBox()
-        layout = QGridLayout(widget)
-        
-        # Port
-        sb_port = NoScrollSpinBox()
-        sb_port.setValue(int(id_i2c_data.get('port', 0)))
-        layout.addWidget(QLabel(self.tr("Port:")), 0, 0)
-        layout.addWidget(sb_port, 0, 1)
-        
-        # SDA
-        sb_sda = NoScrollSpinBox()
-        sb_sda.setRange(-1, 999)
-        sb_sda.setValue(int(id_i2c_data.get('sda', -1)))
-        layout.addWidget(QLabel(self.tr("SDA:")), 0, 2)
-        layout.addWidget(sb_sda, 0, 3)
-        
-        # SCL
-        sb_scl = NoScrollSpinBox()
-        sb_scl.setRange(-1, 999)
-        sb_scl.setValue(int(id_i2c_data.get('scl', -1)))
-        layout.addWidget(QLabel(self.tr("SCL:")), 0, 4)
-        layout.addWidget(sb_scl, 0, 5)
-        
-        # Freq
-        sb_freq = NoScrollSpinBox()
-        sb_freq.setRange(0, 1000000)
-        sb_freq.setSingleStep(10000)
-        sb_freq.setValue(int(id_i2c_data.get('freq', 400000)))
-        layout.addWidget(QLabel(self.tr("Freq:")), 1, 0)
-        layout.addWidget(sb_freq, 1, 1)
-        
-        # Addr
-        le_addr = QLineEdit(self._int_to_hex_str(id_i2c_data.get('addr')))
-        le_addr.setPlaceholderText("0x55")
-        layout.addWidget(QLabel(self.tr("Addr:")), 1, 2)
-        layout.addWidget(le_addr, 1, 3)
-        
-        # Delete
-        btn_del = QPushButton(self.tr("删除"))
-        btn_del.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        layout.addWidget(btn_del, 1, 4, 1, 2)
-        
-        parent_layout.addWidget(widget)
-        
-        editor_dict = {
-            'widget': widget,
-            'port': sb_port,
-            'sda': sb_sda,
-            'scl': sb_scl,
-            'freq': sb_freq,
-            'addr': le_addr
-        }
-        editor_list.append(editor_dict)
-        
-        btn_del.clicked.connect(lambda: self._delete_editor_from_list(widget, editor_dict, editor_list))
+        self._i2c_pin_mgr.add_identify_i2c_editor(parent_layout, id_i2c_data, editor_list)
 
     def _add_display_editor_to_layout(self, parent_layout, display_data, editor_list):
-        widget = QGroupBox()
-        widget.setStyleSheet("QGroupBox { border: 1px solid #ccc; border-radius: 5px; margin-top: 10px; padding-top: 10px; } QGroupBox::title { subcontrol-origin: margin; subcontrol-position: top left; padding: 0 3px; font-weight: bold; }")
-        layout = QVBoxLayout(widget)
-        
-        # 1. Basic Info (Grid Layout)
-        grid_basic = QGridLayout()
-        
-        # Bus Type
-        combo_bus = NoScrollComboBox()
-        combo_bus.addItems(['spi', 'i2c', 'parallel8', 'parallel16', 'rgb', 'dsi'])
-        current_bus = display_data.get('bus_type', 'spi')
-        combo_bus.setCurrentText(current_bus)
-        grid_basic.addWidget(QLabel(self.tr("接口类型:")), 0, 0)
-        grid_basic.addWidget(combo_bus, 0, 1)
-
-        # Driver
-        le_driver = QLineEdit(str(display_data.get('driver', '')))
-        grid_basic.addWidget(QLabel(self.tr("驱动:")), 0, 2)
-        grid_basic.addWidget(le_driver, 0, 3)
-        
-        # Width
-        sb_width = NoScrollSpinBox()
-        sb_width.setRange(0, 9999)
-        sb_width.setValue(int(display_data.get('width', 0)))
-        grid_basic.addWidget(QLabel(self.tr("宽度:")), 1, 0)
-        grid_basic.addWidget(sb_width, 1, 1)
-        
-        # Height
-        sb_height = NoScrollSpinBox()
-        sb_height.setRange(0, 9999)
-        sb_height.setValue(int(display_data.get('height', 0)))
-        grid_basic.addWidget(QLabel(self.tr("高度:")), 1, 2)
-        grid_basic.addWidget(sb_height, 1, 3)
-        
-        # Freq
-        sb_freq = NoScrollSpinBox()
-        sb_freq.setRange(0, 100000000)
-        sb_freq.setSingleStep(1000000)
-        sb_freq.setValue(int(display_data.get('freq', 0)))
-        grid_basic.addWidget(QLabel(self.tr("频率:")), 2, 0)
-        grid_basic.addWidget(sb_freq, 2, 1)
-        
-        layout.addLayout(grid_basic)
-        
-        # 2. Interface Configuration (Dynamic Layout)
-        # Use a container widget with VBox layout instead of QStackedWidget
-        # to allow automatic height adjustment based on visible content.
-        container_config = QWidget()
-        layout_config = QVBoxLayout(container_config)
-        layout_config.setContentsMargins(0, 0, 0, 0)
-        layout.addWidget(container_config)
-        
-        # Helper to create pin table
-        def create_pin_table(pins_list, data):
-            grp = QGroupBox(self.tr("引脚配置"))
-            l = QVBoxLayout(grp)
-            t = QTableWidget()
-            t.setColumnCount(2)
-            t.setHorizontalHeaderLabels([self.tr("功能"), self.tr("引脚")])
-            t.horizontalHeader().setSectionResizeMode(QHeaderView.ResizeMode.Stretch)
-            t.setRowCount(len(pins_list))
-            for i, p in enumerate(pins_list):
-                item = QTableWidgetItem(p)
-                item.setFlags(item.flags() ^ Qt.ItemFlag.ItemIsEditable)
-                t.setItem(i, 0, item)
-                val = data.get(p)
-                if val is None: val = ""
-                le = QLineEdit(str(val))
-                t.setCellWidget(i, 1, le)
-            self._adjust_table_height(t)
-            l.addWidget(t)
-            return grp, t
-
-        pins_data = display_data.get('pins', {})
-        
-        # Store pages in a dict for easy access
-        config_pages = {}
-
-        # Page 0: SPI
-        page_spi, table_spi = create_pin_table(['mosi', 'miso', 'sclk', 'cs', 'dc', 'rst', 'bl'], pins_data)
-        config_pages['spi'] = page_spi
-        layout_config.addWidget(page_spi)
-        
-        # Page 1: I2C
-        page_i2c = QWidget()
-        l_i2c = QVBoxLayout(page_i2c)
-        l_i2c.setContentsMargins(0, 0, 0, 0)
-        # Addr
-        l_i2c_form = QFormLayout()
-        le_i2c_addr = QLineEdit(self._int_to_hex_str(display_data.get('addr')))
-        le_i2c_addr.setPlaceholderText("0x3C")
-        l_i2c_form.addRow(self.tr("I2C 地址:"), le_i2c_addr)
-        l_i2c.addLayout(l_i2c_form)
-        # Pins
-        grp_i2c_pins, table_i2c = create_pin_table(['sda', 'scl', 'rst', 'bl'], pins_data)
-        l_i2c.addWidget(grp_i2c_pins)
-        config_pages['i2c'] = page_i2c
-        layout_config.addWidget(page_i2c)
-        
-        # Page 2: Parallel 8
-        page_p8, table_p8 = create_pin_table(['d0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'wr', 'rd', 'rs', 'cs', 'rst', 'bl'], pins_data)
-        config_pages['parallel8'] = page_p8
-        layout_config.addWidget(page_p8)
-        
-        # Page 3: Parallel 16
-        page_p16, table_p16 = create_pin_table([f'd{i}' for i in range(16)] + ['wr', 'rd', 'rs', 'cs', 'rst', 'bl'], pins_data)
-        config_pages['parallel16'] = page_p16
-        layout_config.addWidget(page_p16)
-        
-        # Page 4: RGB
-        page_rgb, table_rgb = create_pin_table(['hsync', 'vsync', 'de', 'pclk', 'd0', 'd1', 'd2', 'd3', 'd4', 'd5', 'd6', 'd7', 'd8', 'd9', 'd10', 'd11', 'd12', 'd13', 'd14', 'd15', 'disp_en', 'rst', 'bl'], pins_data)
-        config_pages['rgb'] = page_rgb
-        layout_config.addWidget(page_rgb)
-
-        # Page 5: DSI
-        page_dsi, table_dsi = create_pin_table(['te', 'rst', 'bl'], pins_data)
-        config_pages['dsi'] = page_dsi
-        layout_config.addWidget(page_dsi)
-
-        # Connect combo to switch visibility
-        def on_bus_changed(text):
-            for bus_name, page in config_pages.items():
-                if bus_name == text:
-                    page.show()
-                else:
-                    page.hide()
-        
-        combo_bus.currentTextChanged.connect(on_bus_changed)
-        on_bus_changed(current_bus) # Set initial visibility
-        
-        # 3. Identify (Form)
-        grp_id = QGroupBox(self.tr("识别参数 (Identify)"))
-        layout_id = QFormLayout(grp_id)
-        
-        id_data = display_data.get('identify', {})
-        
-        le_cmd = QLineEdit(self._int_to_hex_str(id_data.get('cmd')))
-        le_cmd.setPlaceholderText(self.tr("例如: 0x04"))
-        layout_id.addRow(self.tr("指令 (CMD):"), le_cmd)
-        
-        le_expect = QLineEdit(self._int_to_hex_str(id_data.get('expect')))
-        le_expect.setPlaceholderText(self.tr("例如: 0x079100"))
-        layout_id.addRow(self.tr("期望值 (Expect):"), le_expect)
-        
-        le_mask = QLineEdit(self._int_to_hex_str(id_data.get('mask')))
-        le_mask.setPlaceholderText(self.tr("例如: 0xFFFFFF"))
-        layout_id.addRow(self.tr("掩码 (Mask):"), le_mask)
-        
-        chk_rst = QCheckBox(self.tr("读取前复位 (RST Before)"))
-        chk_rst.setChecked(bool(id_data.get('rst_before', False)))
-        layout_id.addRow("", chk_rst)
-        
-        sb_wait = NoScrollSpinBox()
-        sb_wait.setRange(0, 5000)
-        sb_wait.setValue(int(id_data.get('rst_wait', 0)))
-        sb_wait.setSuffix(" ms")
-        layout_id.addRow(self.tr("复位等待 (Wait):"), sb_wait)
-        
-        layout.addWidget(grp_id)
-        
-        # Prerequisites
-        prereq_entries = []
-        grp_prereq = self._create_prerequisites_widget(display_data, prereq_entries)
-        layout.addWidget(grp_prereq)
-
-        # Delete Button
-        btn_del = QPushButton(self.tr("删除此屏幕"))
-        btn_del.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        layout.addWidget(btn_del)
-        
-        parent_layout.addWidget(widget)
-        
-        editor_dict = {
-            'widget': widget,
-            'bus_type': combo_bus,
-            'driver': le_driver,
-            'width': sb_width,
-            'height': sb_height,
-            'freq': sb_freq,
-            'tables': {
-                'spi': table_spi,
-                'i2c': table_i2c,
-                'parallel8': table_p8,
-                'parallel16': table_p16,
-                'rgb': table_rgb,
-                'dsi': table_dsi
-            },
-            'i2c_addr': le_i2c_addr,
-            'id_cmd': le_cmd,
-            'id_expect': le_expect,
-            'id_mask': le_mask,
-            'id_rst': chk_rst,
-            'id_wait': sb_wait,
-            'prereq_entries': prereq_entries
-        }
-        editor_list.append(editor_dict)
-        
-        btn_del.clicked.connect(lambda: self._delete_editor_from_list(widget, editor_dict, editor_list))
+        self._display_mgr.add_editor_to_layout(parent_layout, display_data, editor_list)
 
     def _create_prerequisites_widget(self, data, entries_list):
-        grp_prereq = QGroupBox(self.tr("前置条件 (Prerequisites)"))
-        layout_prereq = QVBoxLayout(grp_prereq)
-        
-        # Container for rows
-        prereq_container = QWidget()
-        layout_prereq_rows = QVBoxLayout(prereq_container)
-        layout_prereq_rows.setContentsMargins(0, 0, 0, 0)
-        layout_prereq.addWidget(prereq_container)
-        
-        def add_prereq_row(p_type_val=None, p_params_val=None):
-            row_widget = QWidget()
-            row_layout = QHBoxLayout(row_widget)
-            row_layout.setContentsMargins(0, 0, 0, 0)
-            
-            cb_type = NoScrollComboBox()
-            cb_type.addItems(['gpio', 'i2c_read', 'i2c_write', 'spi_read', 'spi_write'])
-            if p_type_val:
-                cb_type.setCurrentText(p_type_val)
-            
-            param_container = QWidget()
-            param_layout = QHBoxLayout(param_container)
-            param_layout.setContentsMargins(0, 0, 0, 0)
-            
-            # Helper to parse params string to dict
-            def parse_params(val):
-                if isinstance(val, dict):
-                    return val
-                if not val: return {}
-                # Legacy string parsing
-                res = {}
-                parts = str(val).split(',')
-                for part in parts:
-                    if ':' in part:
-                        k, v = part.split(':', 1)
-                        res[k.strip()] = v.strip()
-                return res
-
-            current_params = parse_params(p_params_val)
-
-            # Store widget references
-            widgets = {}
-
-            def create_label(text):
-                lbl = QLabel(text)
-                lbl.setAlignment(Qt.AlignmentFlag.AlignRight | Qt.AlignmentFlag.AlignVCenter)
-                lbl.setFixedWidth(40)
-                return lbl
-
-            def update_params_ui(type_text):
-                # Clear existing
-                while param_layout.count():
-                    item = param_layout.takeAt(0)
-                    if item.widget():
-                        item.widget().deleteLater()
-                widgets.clear()
-
-                if type_text == 'gpio':
-                    # GPIO: pin, level
-                    sb_gpio = NoScrollSpinBox()
-                    sb_gpio.setRange(-1, 999)
-                    sb_gpio.setValue(int(current_params.get('gpio', -1)))
-                    param_layout.addWidget(create_label("GPIO:"))
-                    param_layout.addWidget(sb_gpio)
-                    widgets['gpio'] = sb_gpio
-
-                    cb_level = NoScrollComboBox()
-                    cb_level.addItems(['0', '1'])
-                    cb_level.setCurrentText(str(current_params.get('level', '0')))
-                    param_layout.addWidget(create_label("Level:"))
-                    param_layout.addWidget(cb_level)
-                    widgets['level'] = cb_level
-                    param_layout.addStretch()
-
-                elif type_text.startswith('i2c'):
-                    # I2C: addr, reg, [data/len]
-                    # Addr (Hex)
-                    addr_val = str(current_params.get('addr', ''))
-                    try:
-                        addr_int = int(addr_val, 16) if addr_val.strip().lower().startswith('0x') else int(addr_val)
-                        addr_disp = f"0x{addr_int:02X}"
-                    except:
-                        addr_disp = addr_val
-                    le_addr = QLineEdit(addr_disp)
-                    le_addr.setPlaceholderText("0x00")
-                    le_addr.setFixedWidth(60)
-                    param_layout.addWidget(create_label("Addr:"))
-                    param_layout.addWidget(le_addr)
-                    widgets['addr'] = le_addr
-
-                    # Reg (Hex)
-                    reg_val = str(current_params.get('reg', ''))
-                    try:
-                        reg_int = int(reg_val, 16) if reg_val.strip().lower().startswith('0x') else int(reg_val)
-                        reg_disp = f"0x{reg_int:02X}"
-                    except:
-                        reg_disp = reg_val
-                    le_reg = QLineEdit(reg_disp)
-                    le_reg.setPlaceholderText("0x00")
-                    le_reg.setFixedWidth(60)
-                    param_layout.addWidget(create_label("Reg:"))
-                    param_layout.addWidget(le_reg)
-                    widgets['reg'] = le_reg
-
-                    if 'write' in type_text:
-                        # Data field
-                        val_str = str(current_params.get('data', '0'))
-                        try:
-                            val_int = int(val_str, 16) if val_str.strip().lower().startswith('0x') else int(val_str)
-                        except:
-                            val_int = 0
-                        
-                        le_data = QLineEdit(f"0x{val_int:02X}")
-                        le_data.setPlaceholderText("0x00")
-                        le_data.setFixedWidth(60)
-                        param_layout.addWidget(create_label("Data:"))
-                        param_layout.addWidget(le_data)
-                        widgets['data'] = le_data
-
-                        # Bit Editor
-                        bit_container = QWidget()
-                        bit_layout = QHBoxLayout(bit_container)
-                        bit_layout.setContentsMargins(5, 0, 0, 0)
-                        bit_layout.setSpacing(1)
-                        
-                        bit_btns = [] 
-
-                        def on_bit_toggled():
-                            new_val = 0
-                            for b_idx, btn in bit_btns:
-                                if btn.isChecked():
-                                    new_val |= (1 << b_idx)
-                            le_data.setText(f"0x{new_val:02X}")
-
-                        for i in range(7, -1, -1):
-                            btn = QPushButton(str(i))
-                            btn.setCheckable(True)
-                            btn.setFixedSize(20, 20)
-                            def update_style(b=btn):
-                                if b.isChecked():
-                                    b.setStyleSheet("background-color: #4CAF50; color: white; border: none; font-size: 10px; font-weight: bold;")
-                                else:
-                                    b.setStyleSheet("background-color: #E0E0E0; color: #888888; border: none; font-size: 10px;")
-                            
-                            is_set = (val_int >> i) & 1
-                            btn.setChecked(bool(is_set))
-                            update_style(btn)
-                            
-                            btn.toggled.connect(lambda checked, b=btn: update_style(b))
-                            btn.toggled.connect(on_bit_toggled)
-                            
-                            bit_layout.addWidget(btn)
-                            bit_btns.append((i, btn))
-                        
-                        bit_layout.addStretch()
-                        param_layout.addWidget(bit_container)
-
-                        def on_text_changed(text):
-                            try:
-                                v = int(text, 16) if text.strip().lower().startswith('0x') else int(text)
-                                for b_idx, btn in bit_btns:
-                                    btn.blockSignals(True)
-                                    should_check = bool((v >> b_idx) & 1)
-                                    if btn.isChecked() != should_check:
-                                        btn.setChecked(should_check)
-                                        if should_check:
-                                            btn.setStyleSheet("background-color: #4CAF50; color: white; border: none; font-size: 10px; font-weight: bold;")
-                                        else:
-                                            btn.setStyleSheet("background-color: #E0E0E0; color: #888888; border: none; font-size: 10px;")
-                                    btn.blockSignals(False)
-                            except:
-                                pass
-                        
-                        le_data.textChanged.connect(on_text_changed)
-                    else:
-                        sb_len = NoScrollSpinBox()
-                        sb_len.setValue(int(current_params.get('len', 1)))
-                        param_layout.addWidget(create_label("Len:"))
-                        param_layout.addWidget(sb_len)
-                        widgets['len'] = sb_len
-                    
-                    param_layout.addStretch()
-
-                elif type_text.startswith('spi'):
-                    # SPI: cmd, [data/len]
-                    le_cmd = QLineEdit(str(current_params.get('cmd', '')))
-                    le_cmd.setPlaceholderText("0x00")
-                    le_cmd.setFixedWidth(60)
-                    param_layout.addWidget(create_label("Cmd:"))
-                    param_layout.addWidget(le_cmd)
-                    widgets['cmd'] = le_cmd
-
-                    if 'write' in type_text:
-                        # Data field
-                        val_str = str(current_params.get('data', '0'))
-                        try:
-                            val_int = int(val_str, 16) if val_str.strip().lower().startswith('0x') else int(val_str)
-                        except:
-                            val_int = 0
-                        
-                        le_data = QLineEdit(f"0x{val_int:02X}")
-                        le_data.setPlaceholderText("0x00")
-                        le_data.setFixedWidth(60)
-                        param_layout.addWidget(create_label("Data:"))
-                        param_layout.addWidget(le_data)
-                        widgets['data'] = le_data
-
-                        # Bit Editor
-                        bit_container = QWidget()
-                        bit_layout = QHBoxLayout(bit_container)
-                        bit_layout.setContentsMargins(5, 0, 0, 0)
-                        bit_layout.setSpacing(1)
-                        
-                        bit_btns = [] 
-
-                        def on_bit_toggled():
-                            new_val = 0
-                            for b_idx, btn in bit_btns:
-                                if btn.isChecked():
-                                    new_val |= (1 << b_idx)
-                            le_data.setText(f"0x{new_val:02X}")
-
-                        for i in range(7, -1, -1):
-                            btn = QPushButton(str(i))
-                            btn.setCheckable(True)
-                            btn.setFixedSize(20, 20)
-                            def update_style(b=btn):
-                                if b.isChecked():
-                                    b.setStyleSheet("background-color: #4CAF50; color: white; border: none; font-size: 10px; font-weight: bold;")
-                                else:
-                                    b.setStyleSheet("background-color: #E0E0E0; color: #888888; border: none; font-size: 10px;")
-                            
-                            is_set = (val_int >> i) & 1
-                            btn.setChecked(bool(is_set))
-                            update_style(btn)
-                            
-                            btn.toggled.connect(lambda checked, b=btn: update_style(b))
-                            btn.toggled.connect(on_bit_toggled)
-                            
-                            bit_layout.addWidget(btn)
-                            bit_btns.append((i, btn))
-                        
-                        bit_layout.addStretch()
-                        param_layout.addWidget(bit_container)
-
-                        def on_text_changed(text):
-                            try:
-                                v = int(text, 16) if text.strip().lower().startswith('0x') else int(text)
-                                for b_idx, btn in bit_btns:
-                                    btn.blockSignals(True)
-                                    should_check = bool((v >> b_idx) & 1)
-                                    if btn.isChecked() != should_check:
-                                        btn.setChecked(should_check)
-                                        if should_check:
-                                            btn.setStyleSheet("background-color: #4CAF50; color: white; border: none; font-size: 10px; font-weight: bold;")
-                                        else:
-                                            btn.setStyleSheet("background-color: #E0E0E0; color: #888888; border: none; font-size: 10px;")
-                                    btn.blockSignals(False)
-                            except:
-                                pass
-                        
-                        le_data.textChanged.connect(on_text_changed)
-                    else:
-                        sb_len = NoScrollSpinBox()
-                        sb_len.setValue(int(current_params.get('len', 1)))
-                        param_layout.addWidget(create_label("Len:"))
-                        param_layout.addWidget(sb_len)
-                        widgets['len'] = sb_len
-                    
-                    param_layout.addStretch()
-
-            cb_type.currentTextChanged.connect(update_params_ui)
-            update_params_ui(cb_type.currentText())
-
-            btn_remove = QPushButton("X")
-            btn_remove.setFixedWidth(30)
-            btn_remove.setStyleSheet("color: red;")
-            
-            row_layout.addWidget(cb_type)
-            row_layout.addWidget(param_container)
-            row_layout.addStretch()
-            row_layout.addWidget(btn_remove)
-            
-            layout_prereq_rows.addWidget(row_widget)
-            
-            # Function to get params dict
-            def get_params_dict():
-                res = {}
-                for k, w in widgets.items():
-                    val = None
-                    if isinstance(w, QComboBox):
-                        val = w.currentText()
-                        # Try to convert int if possible (for level)
-                        try:
-                            val = int(val)
-                        except ValueError:
-                            pass
-                    elif isinstance(w, QSpinBox):
-                        val = w.value()
-                    elif isinstance(w, QLineEdit):
-                        val = w.text().strip()
-                        # Try to convert hex/int
-                        if val:
-                            try:
-                                if val.lower().startswith('0x'):
-                                    val = int(val, 16)
-                                else:
-                                    val = int(val)
-                            except ValueError:
-                                pass # Keep as string if not int
-                    
-                    if val is not None and val != "":
-                        res[k] = val
-                return res
-
-            entry = {'widget': row_widget, 'type': cb_type, 'get_params': get_params_dict}
-            entries_list.append(entry)
-            
-            def remove_row():
-                layout_prereq_rows.removeWidget(row_widget)
-                row_widget.deleteLater()
-                if entry in entries_list:
-                    entries_list.remove(entry)
-            
-            btn_remove.clicked.connect(remove_row)
-
-        # Load existing
-        existing_prereqs = data.get('prerequisites', [])
-        for p in existing_prereqs:
-            # Handle both legacy 'params' string/dict and new flat structure
-            params = p.get('params')
-            if params is None:
-                # If no 'params' key, assume flat structure (copy p and remove 'type')
-                params = p.copy()
-                if 'type' in params:
-                    del params['type']
-            
-            add_prereq_row(p.get('type'), params)
-            
-        # Add button
-        btn_add_prereq = QPushButton(self.tr("➕ 添加前置条件"))
-        btn_add_prereq.setMinimumHeight(28)
-        btn_add_prereq.setStyleSheet("text-align: left; padding-left: 10px;")
-        btn_add_prereq.clicked.connect(lambda: add_prereq_row())
-        layout_prereq.addWidget(btn_add_prereq)
-        
-        return grp_prereq
+        return PrereqEditorManager.create_prerequisites_widget(self.tr, data, entries_list)
 
     def _add_touch_editor(self, parent_layout, touch_data, editor_list):
-        widget = QGroupBox()
-        layout = QVBoxLayout(widget)
-        
-        grid = QGridLayout()
-        
-        # Bus Type
-        cb_bus_type = NoScrollComboBox()
-        cb_bus_type.addItems(['i2c', 'spi'])
-        bus_type_val = str(touch_data.get('bus_type', 'i2c'))
-        cb_bus_type.setCurrentText(bus_type_val)
-        grid.addWidget(QLabel(self.tr("总线类型:")), 0, 0)
-        grid.addWidget(cb_bus_type, 0, 1)
-
-        # Driver
-        le_driver = QLineEdit(str(touch_data.get('driver', '')))
-        grid.addWidget(QLabel(self.tr("驱动:")), 0, 2)
-        grid.addWidget(le_driver, 0, 3)
-        
-        # Addr
-        lbl_addr = QLabel(self.tr("地址:"))
-        le_addr = QLineEdit(self._int_to_hex_str(touch_data.get('addr')))
-        le_addr.setPlaceholderText("0x14")
-        grid.addWidget(lbl_addr, 1, 0)
-        grid.addWidget(le_addr, 1, 1)
-        
-        # Width/Height (Optional for touch but good to have)
-        sb_width = NoScrollSpinBox()
-        sb_width.setRange(0, 9999)
-        sb_width.setValue(int(touch_data.get('width', 0)))
-        grid.addWidget(QLabel(self.tr("宽度:")), 1, 2)
-        grid.addWidget(sb_width, 1, 3)
-        
-        sb_height = NoScrollSpinBox()
-        sb_height.setRange(0, 9999)
-        sb_height.setValue(int(touch_data.get('height', 0)))
-        grid.addWidget(QLabel(self.tr("高度:")), 2, 0)
-        grid.addWidget(sb_height, 2, 1)
-
-        sb_freq = NoScrollSpinBox()
-        sb_freq.setRange(0, 10000000)
-        sb_freq.setSingleStep(10000)
-        sb_freq.setValue(int(touch_data.get('freq', 0)))
-        grid.addWidget(QLabel(self.tr("频率:")), 2, 2)
-        grid.addWidget(sb_freq, 2, 3)
-        
-        layout.addLayout(grid)
-        
-        # Pins
-        grp_pins = QGroupBox(self.tr("引脚"))
-        layout_pins = QGridLayout(grp_pins)
-        
-        pins_data = touch_data.get('pins', {})
-        
-        def get_pin_val(k):
-            v = pins_data.get(k)
-            return "" if v is None else str(v)
-        
-        # Common pins
-        le_int = QLineEdit(get_pin_val('int'))
-        le_rst = QLineEdit(get_pin_val('rst'))
-        
-        # I2C pins
-        le_sda = QLineEdit(get_pin_val('sda'))
-        le_scl = QLineEdit(get_pin_val('scl'))
-        
-        # SPI pins
-        le_cs = QLineEdit(get_pin_val('cs'))
-        le_mosi = QLineEdit(get_pin_val('mosi'))
-        le_miso = QLineEdit(get_pin_val('miso'))
-        le_sclk = QLineEdit(get_pin_val('sclk'))
-
-        # Labels
-        lbl_sda = QLabel("SDA:")
-        lbl_scl = QLabel("SCL:")
-        lbl_cs = QLabel("CS:")
-        lbl_mosi = QLabel("MOSI:")
-        lbl_miso = QLabel("MISO:")
-        lbl_sclk = QLabel("SCLK:")
-        lbl_int = QLabel("INT:")
-        lbl_rst = QLabel("RST:")
-
-        # Add all to layout
-        # Row 0
-        # Row 0 I2C
-        layout_pins.addWidget(lbl_sda, 0, 0)
-        layout_pins.addWidget(le_sda, 0, 1)
-        layout_pins.addWidget(lbl_scl, 0, 2)
-        layout_pins.addWidget(le_scl, 0, 3)
-        
-        # Row 1 SPI (part 1)
-        layout_pins.addWidget(lbl_cs, 1, 0)
-        layout_pins.addWidget(le_cs, 1, 1)
-        layout_pins.addWidget(lbl_mosi, 1, 2)
-        layout_pins.addWidget(le_mosi, 1, 3)
-        
-        # Row 2 SPI (part 2)
-        layout_pins.addWidget(lbl_miso, 2, 0)
-        layout_pins.addWidget(le_miso, 2, 1)
-        layout_pins.addWidget(lbl_sclk, 2, 2)
-        layout_pins.addWidget(le_sclk, 2, 3)
-        
-        # Row 3 (Common)
-        layout_pins.addWidget(lbl_int, 3, 0)
-        layout_pins.addWidget(le_int, 3, 1)
-        layout_pins.addWidget(lbl_rst, 3, 2)
-        layout_pins.addWidget(le_rst, 3, 3)
-
-        layout.addWidget(grp_pins)
-        
-        def update_visibility(bus_type):
-            is_i2c = (bus_type == 'i2c')
-            
-            # I2C specific
-            lbl_sda.setVisible(is_i2c)
-            le_sda.setVisible(is_i2c)
-            lbl_scl.setVisible(is_i2c)
-            le_scl.setVisible(is_i2c)
-            lbl_addr.setVisible(is_i2c)
-            le_addr.setVisible(is_i2c)
-            
-            # SPI specific
-            lbl_cs.setVisible(not is_i2c)
-            le_cs.setVisible(not is_i2c)
-            lbl_mosi.setVisible(not is_i2c)
-            le_mosi.setVisible(not is_i2c)
-            lbl_miso.setVisible(not is_i2c)
-            le_miso.setVisible(not is_i2c)
-            lbl_sclk.setVisible(not is_i2c)
-            le_sclk.setVisible(not is_i2c)
-
-        cb_bus_type.currentTextChanged.connect(update_visibility)
-        update_visibility(bus_type_val)
-
-        # Prerequisites
-        prereq_entries = []
-        grp_prereq = self._create_prerequisites_widget(touch_data, prereq_entries)
-        layout.addWidget(grp_prereq)
-        
-        # Delete
-        btn_del = QPushButton(self.tr("删除此触摸"))
-        btn_del.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        layout.addWidget(btn_del)
-        
-        parent_layout.addWidget(widget)
-        
-        editor_dict = {
-            'widget': widget,
-            'bus_type': cb_bus_type,
-            'driver': le_driver,
-            'addr': le_addr,
-            'width': sb_width,
-            'height': sb_height,
-            'freq': sb_freq,
-            'pin_sda': le_sda,
-            'pin_scl': le_scl,
-            'pin_cs': le_cs,
-            'pin_mosi': le_mosi,
-            'pin_miso': le_miso,
-            'pin_sclk': le_sclk,
-            'pin_int': le_int,
-            'pin_rst': le_rst,
-            'prereq_entries': prereq_entries
-        }
-        editor_list.append(editor_dict)
-        
-        btn_del.clicked.connect(lambda: self._delete_editor_from_list(widget, editor_dict, editor_list))
+        self._touch_mgr.add_editor(parent_layout, touch_data, editor_list)
 
     def _add_display_editor(self, display_data):
         self._add_display_editor_to_layout(self.layout_display_items, display_data, self.display_editors)
 
     def _int_to_hex_str(self, val):
-        if val is None: return ""
-        if isinstance(val, int): return f"0x{val:X}"
-        return str(val)
+        return _int_to_hex_str_fn(val)
 
     def _parse_int_or_hex(self, val_str):
-        val_str = val_str.strip()
-        if not val_str: return None
-        try:
-            if val_str.lower().startswith('0x'):
-                return int(val_str, 16)
-            return int(val_str)
-        except ValueError:
-            return None
+        return _parse_int_or_hex_fn(val_str)
 
     def _delete_editor_from_list(self, widget, editor_dict, editor_list):
-        widget.deleteLater()
-        if editor_dict in editor_list:
-            editor_list.remove(editor_dict)
+        _delete_editor_from_list_fn(widget, editor_dict, editor_list)
 
     def _add_pin_row(self, pin_data):
-        row = self.table_pins.rowCount()
-        self.table_pins.insertRow(row)
-        
-        # GPIO
-        sb_gpio = NoScrollSpinBox()
-        sb_gpio.setRange(0, 999)
-        gpio_val = pin_data.get('gpio', None)
-        if gpio_val is not None and int(gpio_val) != -1:
-            sb_gpio.setValue(int(gpio_val))
-        original_gpio = int(gpio_val) if gpio_val is not None and int(gpio_val) != -1 else sb_gpio.value()
-        self.table_pins.setCellWidget(row, 0, sb_gpio)
-        self._register_change_highlight(sb_gpio, sb_gpio.valueChanged, sb_gpio.value, original_gpio)
-        
-        # Mode
-        combo_mode = NoScrollComboBox()
-        combo_mode.addItems(['input', 'input_pullup', 'input_pulldown'])
-        original_mode = pin_data.get('mode', 'input')
-        combo_mode.setCurrentText(original_mode)
-        self.table_pins.setCellWidget(row, 1, combo_mode)
-        self._register_change_highlight(combo_mode, combo_mode.currentTextChanged, combo_mode.currentText, original_mode)
-        
-        # Expect
-        combo_expect = NoScrollComboBox()
-        combo_expect.addItems(['LOW', 'HIGH'])
-        expect_val = int(pin_data.get('expect', 0))
-        combo_expect.setCurrentIndex(expect_val) # 0=LOW, 1=HIGH
-        self.table_pins.setCellWidget(row, 2, combo_expect)
-        self._register_change_highlight(combo_expect, combo_expect.currentIndexChanged, combo_expect.currentIndex, expect_val)
-
-        # Adjust table height after adding row
-        self._adjust_table_height(self.table_pins)
+        self._i2c_pin_mgr.add_pin_row(pin_data)
 
     def _delete_selected_pin(self):
-        current_row = self.table_pins.currentRow()
-        if current_row >= 0:
-            self.table_pins.removeRow(current_row)
-            self._adjust_table_height(self.table_pins) # Adjust height after deletion
+        self._i2c_pin_mgr.delete_selected_pin()
 
     def _import_pins_from_json(self):
-        """Import pins from SelfCheck JSON data"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QComboBox, QPushButton, QMessageBox
-        
-        # Create custom dialog
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("批量导入引脚"))
-        dialog.setMinimumSize(500, 400)
-        layout = QVBoxLayout(dialog)
-        
-        # Instruction label
-        label = QLabel(self.tr("请粘贴 SelfCheck JSON 数据 (GPIO):"))
-        layout.addWidget(label)
-        
-        # Text input area
-        text_edit = QTextEdit()
-        text_edit.setPlaceholderText('{"chip_model":"...","pins":[...]}')
-        layout.addWidget(text_edit)
-        
-        # Bottom row with filter and buttons
-        bottom_layout = QHBoxLayout()
-        
-        # Level filter dropdown (left side)
-        filter_label = QLabel(self.tr("GPIO 电平过滤:"))
-        combo_filter = QComboBox()
-        combo_filter.addItems([self.tr("全部电平"), self.tr("仅高电平"), self.tr("仅低电平")])
-        bottom_layout.addWidget(filter_label)
-        bottom_layout.addWidget(combo_filter)
-        bottom_layout.addStretch()
-        
-        # Buttons (right side)
-        btn_cancel = QPushButton(self.tr("取消"))
-        btn_ok = QPushButton(self.tr("导入"))
-        btn_ok.setDefault(True)
-        bottom_layout.addWidget(btn_cancel)
-        bottom_layout.addWidget(btn_ok)
-        
-        layout.addLayout(bottom_layout)
-        
-        # Connect buttons
-        btn_cancel.clicked.connect(dialog.reject)
-        btn_ok.clicked.connect(dialog.accept)
-        
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-            
-        text = text_edit.toPlainText()
-        level_filter = combo_filter.currentIndex()  # 0=all, 1=high only, 2=low only
-        
-        if not text.strip():
-            return
-            
-        try:
-            import json
-            data = json.loads(text.strip())
-            
-            # Check for GPIO data
-            if 'pins' in data:
-                self._import_pins_from_data(data, level_filter)
-                return
-                
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("未识别的 JSON 格式 (未找到 'pins' 字段)"))
-            
-        except json.JSONDecodeError:
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("无效的 JSON 格式"))
-        except Exception as e:
-            QMessageBox.warning(self, self.tr("导入失败"), str(e))
+        self._i2c_pin_mgr.import_pins_from_json()
 
     def _import_i2c_from_json(self):
-        """Import I2C devices from SelfCheck JSON data"""
-        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTextEdit, QPushButton, QMessageBox
-        
-        # Create custom dialog
-        dialog = QDialog(self)
-        dialog.setWindowTitle(self.tr("批量导入 I2C"))
-        dialog.setMinimumSize(500, 400)
-        layout = QVBoxLayout(dialog)
-        
-        # Instruction label
-        label = QLabel(self.tr("请粘贴 SelfCheck JSON 数据 (I2C):"))
-        layout.addWidget(label)
-        
-        # Text input area
-        text_edit = QTextEdit()
-        text_edit.setPlaceholderText('{"type":"I2C","devices":[...]}')
-        layout.addWidget(text_edit)
-        
-        # Bottom row with buttons
-        bottom_layout = QHBoxLayout()
-        bottom_layout.addStretch()
-        
-        # Buttons (right side)
-        btn_cancel = QPushButton(self.tr("取消"))
-        btn_ok = QPushButton(self.tr("导入"))
-        btn_ok.setDefault(True)
-        bottom_layout.addWidget(btn_cancel)
-        bottom_layout.addWidget(btn_ok)
-        
-        layout.addLayout(bottom_layout)
-        
-        # Connect buttons
-        btn_cancel.clicked.connect(dialog.reject)
-        btn_ok.clicked.connect(dialog.accept)
-        
-        if dialog.exec() != QDialog.DialogCode.Accepted:
-            return
-            
-        text = text_edit.toPlainText()
-        
-        if not text.strip():
-            return
-            
-        try:
-            import json
-            data = json.loads(text.strip())
-            
-            # Check for I2C data
-            if 'type' in data and data['type'] == 'I2C' and 'devices' in data:
-                self._import_i2c_from_data(data)
-                return
-                
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("未识别的 JSON 格式 (未找到 I2C 数据)"))
-            
-        except json.JSONDecodeError:
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("无效的 JSON 格式"))
-        except Exception as e:
-            QMessageBox.warning(self, self.tr("导入失败"), str(e))
+        self._i2c_pin_mgr.import_i2c_from_json()
 
     def _import_pins_from_data(self, data, level_filter):
-        from PyQt6.QtWidgets import QMessageBox
-        pins = data['pins']
-        if not isinstance(pins, list):
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("'pins' 字段必须是数组"))
-            return
-        
-        # Filter pins by level
-        if level_filter == 1:  # High only
-            pins = [p for p in pins if p.get('level', 0) == 1]
-        elif level_filter == 2:  # Low only
-            pins = [p for p in pins if p.get('level', 0) == 0]
-        
-        if len(pins) == 0:
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("没有符合过滤条件的引脚"))
-            return
-        
-        # Ask user whether to replace or append
-        reply = QMessageBox.question(
-            self,
-            self.tr("导入模式"),
-            self.tr("是否清空现有引脚后导入？\n\n是 = 替换现有引脚\n否 = 追加到现有引脚"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
-        )
-        
-        if reply == QMessageBox.StandardButton.Cancel:
-            return
-            
-        if reply == QMessageBox.StandardButton.Yes:
-            # Clear existing pins
-            self.table_pins.setRowCount(0)
-        
-        # Import pins
-        imported_count = 0
-        for pin in pins:
-            if 'gpio' in pin and 'level' in pin:
-                pin_data = {
-                    'gpio': pin['gpio'],
-                    'mode': 'input', # Default to input
-                    'expect': pin['level']
-                }
-                self._add_pin_row(pin_data)
-                imported_count += 1
-        
-        self._adjust_table_height(self.table_pins)
-        
-        chip_info = data.get('chip_model', 'Unknown')
-        psram_info = "板型具备 PSRAM" if data.get('psram_enabled', False) else "板型不具备 PSRAM"
-        filter_info = ["全部电平", "仅高电平", "仅低电平"][level_filter]
-        QMessageBox.information(
-            self,
-            self.tr("导入成功"),
-            self.tr(f"已导入 {imported_count} 个引脚 ({filter_info})\n芯片: {chip_info}\n{psram_info}")
-        )
+        self._i2c_pin_mgr._import_pins_from_data(data, level_filter)
 
     def _import_i2c_from_data(self, data):
-        from PyQt6.QtWidgets import QMessageBox
-        devices = data.get('devices', [])
-        sda = data.get('sda', -1)
-        scl = data.get('scl', -1)
-        freq = data.get('freq', 400000)
-        
-        if not devices:
-            QMessageBox.warning(self, self.tr("导入失败"), self.tr("未找到 I2C 设备"))
-            return
-
-        # Ask user whether to replace or append
-        reply = QMessageBox.question(
-            self,
-            self.tr("导入模式"),
-            self.tr("是否清空现有 I2C 总线配置后导入？\n\n是 = 替换现有配置\n否 = 追加到现有配置"),
-            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No | QMessageBox.StandardButton.Cancel
-        )
-        
-        if reply == QMessageBox.StandardButton.Cancel:
-            return
-            
-        if not hasattr(self, 'i2c_editors') or not hasattr(self, 'layout_i2c_items'):
-             QMessageBox.warning(self, self.tr("导入失败"), self.tr("找不到 i2c_editors 编辑器列表或布局"))
-             return
-
-        if reply == QMessageBox.StandardButton.Yes:
-            # Clear existing
-            while self.i2c_editors:
-                editor = self.i2c_editors.pop()
-                widget = editor['widget']
-                widget.setParent(None)
-                widget.deleteLater()
-        
-        # Create a new I2C bus entry
-        detect_list = []
-        for addr in devices:
-            detect_list.append({
-                'addr': addr,
-                'name': f'Unknown_0x{addr:02X}'
-            })
-            
-        i2c_data = {
-            'sda': sda,
-            'scl': scl,
-            'freq': freq,
-            'port': 0, # Default port
-            'detect': detect_list,
-            'detect_count': len(detect_list)
-        }
-        
-        self._add_i2c_bus_editor(i2c_data)
-
-        QMessageBox.information(self, self.tr("导入成功"), self.tr(f"成功导入 I2C 总线，包含 {len(detect_list)} 个设备"))
+        self._i2c_pin_mgr._import_i2c_from_data(data)
 
     def _add_i2c_bus_editor(self, i2c_data):
-        widget = QGroupBox()
-        layout = QFormLayout(widget)
-        
-        # Port, SDA, SCL, Freq
-        sb_port = NoScrollSpinBox()
-        port_val = int(i2c_data.get('port', 0))
-        sb_port.setValue(port_val)
-        layout.addRow(self.tr("端口:"), sb_port)
-        self._register_change_highlight(sb_port, sb_port.valueChanged, sb_port.value, port_val)
-        
-        sb_sda = NoScrollSpinBox()
-        sb_sda.setRange(-1, 999)
-        sda_val = int(i2c_data.get('sda', -1))
-        sb_sda.setValue(sda_val)
-        layout.addRow(self.tr("SDA:"), sb_sda)
-        self._register_change_highlight(sb_sda, sb_sda.valueChanged, sb_sda.value, sda_val)
-        
-        sb_scl = NoScrollSpinBox()
-        sb_scl.setRange(-1, 999)
-        scl_val = int(i2c_data.get('scl', -1))
-        sb_scl.setValue(scl_val)
-        layout.addRow(self.tr("SCL:"), sb_scl)
-        self._register_change_highlight(sb_scl, sb_scl.valueChanged, sb_scl.value, scl_val)
-        
-        sb_freq = NoScrollSpinBox()
-        sb_freq.setRange(0, 1000000)
-        sb_freq.setSingleStep(10000)
-        freq_val = int(i2c_data.get('freq', 400000))
-        sb_freq.setValue(freq_val)
-        layout.addRow(self.tr("频率:"), sb_freq)
-        self._register_change_highlight(sb_freq, sb_freq.valueChanged, sb_freq.value, freq_val)
-        
-        # Internal Pullup checkbox
-        cb_internal_pullup = QCheckBox(self.tr("使用内部上拉 (无外部上拉时启用)"))
-        internal_pullup_val = bool(i2c_data.get('internal_pullup', False))
-        cb_internal_pullup.setChecked(internal_pullup_val)
-        cb_internal_pullup.setToolTip(self.tr("当 I2C 总线没有外部上拉电阻时，启用 ESP32 内部上拉电阻。\n注意：内部上拉较弱，仅适用于短距离低速通信。"))
-        layout.addRow(cb_internal_pullup)
-        self._register_change_highlight(cb_internal_pullup, cb_internal_pullup.stateChanged, cb_internal_pullup.isChecked, internal_pullup_val)
-        
-        # Detect Count
-        sb_detect_count = NoScrollSpinBox()
-        sb_detect_count.setRange(-1, 999)
-        sb_detect_count.setSpecialValueText(self.tr("全部"))
-        detect_count_val = i2c_data.get('detect_count', -1)
-        if detect_count_val is None: detect_count_val = -1
-        # Default to total detect count when -1
-        detects = i2c_data.get('detect', [])
-        default_count = len(detects) if detect_count_val == -1 else int(detect_count_val)
-        sb_detect_count.setValue(default_count)
-        layout.addRow(self.tr("至少检测数量:"), sb_detect_count)
-        self._register_change_highlight(sb_detect_count, sb_detect_count.valueChanged, sb_detect_count.value, default_count)
-
-        # Detect Table
-        lbl_detect = QLabel(self.tr("检测设备:"))
-        layout.addRow(lbl_detect)
-        
-        table_detect = QTableWidget()
-        table_detect.setColumnCount(3)
-        table_detect.setHorizontalHeaderLabels([
-            self.tr("名称"),
-            self.tr("地址 (十六进制)"),
-            self.tr("必须")
-        ])
-        table_detect.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        table_detect.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        table_detect.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
-        table_detect.setSelectionBehavior(QTableWidget.SelectionBehavior.SelectRows)
-        
-        table_detect.setRowCount(0)
-        for d in detects:
-            self._add_detect_row(table_detect, d)
-            
-        self._adjust_table_height(table_detect)
-        layout.addRow(table_detect)
-        
-        # Detect Actions
-        btn_add_detect = QPushButton(self.tr("➕ 添加设备"))
-        btn_add_detect.clicked.connect(lambda: self._add_detect_row(table_detect, {}))
-        
-        btn_del_detect = QPushButton(self.tr("➖ 删除设备"))
-        btn_del_detect.clicked.connect(lambda: self._delete_detect_row(table_detect))
-        
-        hbox_detect = QHBoxLayout()
-        hbox_detect.addWidget(btn_add_detect)
-        hbox_detect.addWidget(btn_del_detect)
-        layout.addRow(hbox_detect)
-        
-        # Prerequisites
-        prereq_entries = []
-        grp_prereq = self._create_prerequisites_widget(i2c_data, prereq_entries)
-        layout.addRow(grp_prereq)
-
-        # Delete Bus Button
-        btn_del_bus = QPushButton(self.tr("删除此总线"))
-        btn_del_bus.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        
-        # We need to pass the widget and the editor dict to delete function
-        # But editor_dict is not created yet.
-        # We can use a closure or just pass the widget and find it in the list.
-        
-        self.layout_i2c_items.addWidget(widget)
-        
-        editor_dict = {
-            'widget': widget,
-            'port': sb_port,
-            'sda': sb_sda,
-            'scl': sb_scl,
-            'freq': sb_freq,
-            'internal_pullup': cb_internal_pullup,
-            'detect_count': sb_detect_count,
-            'table_detect': table_detect,
-            'prereq_entries': prereq_entries
-        }
-        self.i2c_editors.append(editor_dict)
-        
-        btn_del_bus.clicked.connect(lambda: self._delete_i2c_bus_editor(widget, editor_dict))
-        layout.addRow(btn_del_bus)
+        self._i2c_pin_mgr.add_i2c_bus_editor(i2c_data)
 
     def _delete_i2c_bus_editor(self, widget, editor_dict):
-        widget.deleteLater()
-        if editor_dict in self.i2c_editors:
-            self.i2c_editors.remove(editor_dict)
+        self._i2c_pin_mgr._delete_i2c_bus_editor(widget, editor_dict)
 
     def _add_detect_row(self, table, detect_data):
-        row = table.rowCount()
-        table.insertRow(row)
-        
-        # Name
-        original_name = detect_data.get('name', '') or ''
-        le_name = QLineEdit(original_name)
-        table.setCellWidget(row, 0, le_name)
-        self._register_change_highlight(le_name, le_name.textChanged, le_name.text, original_name)
-        
-        # Address
-        le_addr = QLineEdit()
-        addr = detect_data.get('addr', 0)
-        original_addr = f"0x{addr:02X}" if isinstance(addr, int) else str(addr)
-        le_addr.setText(original_addr)
-        table.setCellWidget(row, 1, le_addr)
-        self._register_change_highlight(le_addr, le_addr.textChanged, le_addr.text, original_addr)
-
-        # Required checkbox (default True for backward compatibility)
-        required_val = bool(detect_data.get('required', True))
-        cb_required = QCheckBox()
-        cb_required.setChecked(required_val)
-        cb_required.setToolTip(self.tr("必须存在：勾选 = 必须 ACK，否则总线检测失败；\n取消勾选 = 可选，不存在不影响通过判断。"))
-        container = QWidget()
-        layout_center = QHBoxLayout(container)
-        layout_center.addWidget(cb_required)
-        layout_center.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        layout_center.setContentsMargins(0, 0, 0, 0)
-        table.setCellWidget(row, 2, container)
-        self._register_change_highlight(container, cb_required.stateChanged, cb_required.isChecked, required_val)
-
-        self._adjust_table_height(table)
+        self._i2c_pin_mgr._add_detect_row(table, detect_data)
 
     def _delete_detect_row(self, table):
-        current_row = table.currentRow()
-        if current_row >= 0:
-            table.removeRow(current_row)
-            self._adjust_table_height(table)
+        I2CPinEditorManager._delete_detect_row(table)
 
     def _create_yaml_editor_group(self, title, data_list):
         group = QGroupBox(title)
@@ -2691,108 +963,14 @@ class M5BuilderGUI(QMainWindow):
         if hasattr(self, 'display_editors'):
             new_displays = []
             for editor in self.display_editors:
-                d_data = {}
-                d_data['bus_type'] = editor['bus_type'].currentText()
-                d_data['driver'] = editor['driver'].text()
-                d_data['width'] = editor['width'].value()
-                d_data['height'] = editor['height'].value()
-                d_data['freq'] = editor['freq'].value()
-                
-                if d_data['bus_type'] == 'i2c':
-                    addr = self._parse_int_or_hex(editor['i2c_addr'].text())
-                    if addr is not None: d_data['addr'] = addr
-
-                pins = {}
-                table = editor['tables'].get(d_data['bus_type'])
-                if table:
-                    for row in range(table.rowCount()):
-                        pin_name = table.item(row, 0).text()
-                        pin_val_str = table.cellWidget(row, 1).text().strip()
-                        if pin_val_str:
-                            try:
-                                pins[pin_name] = int(pin_val_str)
-                            except ValueError:
-                                pins[pin_name] = pin_val_str
-                d_data['pins'] = pins
-                
-                identify = {}
-                cmd = self._parse_int_or_hex(editor['id_cmd'].text())
-                if cmd is not None: identify['cmd'] = cmd
-                expect = self._parse_int_or_hex(editor['id_expect'].text())
-                if expect is not None: identify['expect'] = expect
-                mask = self._parse_int_or_hex(editor['id_mask'].text())
-                if mask is not None: identify['mask'] = mask
-                if editor['id_rst'].isChecked(): identify['rst_before'] = True
-                wait = editor['id_wait'].value()
-                if wait > 0: identify['rst_wait'] = wait
-                if identify: d_data['identify'] = identify
-                
-                # Prerequisites
-                prereq_list = []
-                for pre in editor.get('prereq_entries', []):
-                    p_type = pre['type'].currentText()
-                    p_params = pre['get_params']()
-                    if p_type or p_params:
-                        entry = {'type': p_type}
-                        if isinstance(p_params, dict):
-                            entry.update(p_params)
-                        else:
-                            entry['params'] = p_params
-                        prereq_list.append(entry)
-                if prereq_list:
-                    d_data['prerequisites'] = prereq_list
-
-                new_displays.append(d_data)
+                new_displays.append(self._serialize_display_editor(editor))
             new_data['display'] = new_displays
 
         # Touch - GUI
         if hasattr(self, 'touch_editors'):
             new_touch = []
             for t_editor in self.touch_editors:
-                t_data = {}
-                t_data['bus_type'] = t_editor['bus_type'].currentText()
-                t_data['driver'] = t_editor['driver'].text()
-                
-                if t_data['bus_type'] == 'i2c':
-                    addr_val = self._parse_int_or_hex(t_editor['addr'].text())
-                    t_data['addr'] = addr_val if addr_val is not None else 0
-                
-                t_data['width'] = t_editor['width'].value()
-                t_data['height'] = t_editor['height'].value()
-                t_data['freq'] = t_editor['freq'].value()
-                
-                pins = {}
-                def get_val(k): return t_editor[f'pin_{k}'].text().strip()
-                
-                pin_keys = ['int', 'rst']
-                if t_data['bus_type'] == 'i2c':
-                    pin_keys.extend(['sda', 'scl'])
-                else:
-                    pin_keys.extend(['cs', 'mosi', 'miso', 'sclk'])
-                
-                for k in pin_keys:
-                    val = get_val(k)
-                    if val:
-                        parsed = self._parse_int_or_hex(val)
-                        pins[k] = parsed if parsed is not None else val
-                
-                t_data['pins'] = pins
-
-                # Prerequisites
-                prereq_list = []
-                for pre in t_editor.get('prereq_entries', []):
-                    p_type = pre['type'].currentText()
-                    p_params = pre['get_params']()
-                    if p_type or p_params:
-                        entry = {'type': p_type}
-                        if isinstance(p_params, dict):
-                            entry.update(p_params)
-                        else:
-                            entry['params'] = p_params
-                        prereq_list.append(entry)
-                if prereq_list:
-                    t_data['prerequisites'] = prereq_list
-                new_touch.append(t_data)
+                new_touch.append(self._serialize_touch_editor(t_editor))
             new_data['touch'] = new_touch
         elif hasattr(self, 'edit_touch'): # Fallback
             try:
@@ -3330,88 +1508,12 @@ class M5BuilderGUI(QMainWindow):
                     # Display
                     v_disp = []
                     for d_editor in editor['display_editors']:
-                        d_data = {}
-                        d_data['driver'] = d_editor['driver'].text()
-                        d_data['width'] = d_editor['width'].value()
-                        d_data['height'] = d_editor['height'].value()
-                        d_data['freq'] = d_editor['freq'].value()
-                        
-                        # Pins
-                        pins = {}
-                        table = d_editor['table_pins']
-                        for row in range(table.rowCount()):
-                            pin_name = table.item(row, 0).text()
-                            pin_val_str = table.cellWidget(row, 1).text().strip()
-                            if pin_val_str:
-                                try:
-                                    pins[pin_name] = int(pin_val_str)
-                                except ValueError:
-                                    pins[pin_name] = pin_val_str
-                        
-                        # Identify
-                        identify = {}
-                        cmd = self._parse_int_or_hex(d_editor['id_cmd'].text())
-                        if cmd is not None: identify['cmd'] = cmd
-                        
-                        expect = self._parse_int_or_hex(d_editor['id_expect'].text())
-                        if expect is not None: identify['expect'] = expect
-                        
-                        mask = self._parse_int_or_hex(d_editor['id_mask'].text())
-                        if mask is not None: identify['mask'] = mask
-                        
-                        if d_editor['id_rst'].isChecked():
-                            identify['rst_before'] = True
-                            
-                        wait = d_editor['id_wait'].value()
-                        if wait > 0:
-                            identify['rst_wait'] = wait
-                            
-                        if identify:
-                            d_data['identify'] = identify
-                            
-                        v_disp.append(d_data)
+                        v_disp.append(self._serialize_display_editor(d_editor))
                     
                     # Touch
                     v_touch = []
                     for t_editor in editor['touch_editors']:
-                        t_data = {}
-                        t_data['bus_type'] = t_editor['bus_type'].currentText()
-                        t_data['driver'] = t_editor['driver'].text()
-                        
-                        if t_data['bus_type'] == 'i2c':
-                            addr_val = self._parse_int_or_hex(t_editor['addr'].text())
-                            t_data['addr'] = addr_val if addr_val is not None else 0
-                        
-                        t_data['width'] = t_editor['width'].value()
-                        t_data['height'] = t_editor['height'].value()
-                        t_data['freq'] = t_editor['freq'].value()
-                        
-                        pins = {}
-                        def get_val(k): return t_editor[f'pin_{k}'].text().strip()
-                        
-                        pin_keys = ['int', 'rst']
-                        if t_data['bus_type'] == 'i2c':
-                            pin_keys.extend(['sda', 'scl'])
-                        else:
-                            pin_keys.extend(['cs', 'mosi', 'miso', 'sclk'])
-                        
-                        for k in pin_keys:
-                            val = get_val(k)
-                            if val:
-                                parsed = self._parse_int_or_hex(val)
-                                pins[k] = parsed if parsed is not None else val
-                        
-                        t_data['pins'] = pins
-
-                        prereq_list = []
-                        for pre in t_editor.get('prereq_entries', []):
-                            p_type = pre['type'].currentText()
-                            p_params = pre['params'].text().strip()
-                            if p_type or p_params:
-                                prereq_list.append({'type': p_type, 'params': p_params})
-                        if prereq_list:
-                            t_data['prerequisites'] = prereq_list
-                        v_touch.append(t_data)
+                        v_touch.append(self._serialize_touch_editor(t_editor))
                     
                     new_variants.append({
                         'name': v_name,
@@ -3433,56 +1535,7 @@ class M5BuilderGUI(QMainWindow):
         new_displays = []
         for editor in self.display_editors:
             try:
-                d_data = {}
-                d_data['bus_type'] = editor['bus_type'].currentText()
-                d_data['driver'] = editor['driver'].text()
-                d_data['width'] = editor['width'].value()
-                d_data['height'] = editor['height'].value()
-                d_data['freq'] = editor['freq'].value()
-                
-                # I2C specific
-                if d_data['bus_type'] == 'i2c':
-                    addr = self._parse_int_or_hex(editor['i2c_addr'].text())
-                    if addr is not None:
-                        d_data['addr'] = addr
-
-                # Pins
-                pins = {}
-                table = editor['tables'].get(d_data['bus_type'])
-                if table:
-                    for row in range(table.rowCount()):
-                        pin_name = table.item(row, 0).text()
-                        pin_val_str = table.cellWidget(row, 1).text().strip()
-                        if pin_val_str:
-                            # Try to convert to int if possible
-                            try:
-                                pins[pin_name] = int(pin_val_str)
-                            except ValueError:
-                                pins[pin_name] = pin_val_str
-                d_data['pins'] = pins
-                
-                # Identify
-                identify = {}
-                cmd = self._parse_int_or_hex(editor['id_cmd'].text())
-                if cmd is not None: identify['cmd'] = cmd
-                
-                expect = self._parse_int_or_hex(editor['id_expect'].text())
-                if expect is not None: identify['expect'] = expect
-                
-                mask = self._parse_int_or_hex(editor['id_mask'].text())
-                if mask is not None: identify['mask'] = mask
-                
-                if editor['id_rst'].isChecked():
-                    identify['rst_before'] = True
-                    
-                wait = editor['id_wait'].value()
-                if wait > 0:
-                    identify['rst_wait'] = wait
-                    
-                if identify:
-                    d_data['identify'] = identify
-                    
-                new_displays.append(d_data)
+                new_displays.append(self._serialize_display_editor(editor))
             except Exception as e:
                 QMessageBox.warning(
                     self,
@@ -3494,19 +1547,30 @@ class M5BuilderGUI(QMainWindow):
         new_data['display'] = new_displays
 
         # Touch
-        try:
-            touch_data = yaml.safe_load(self.edit_touch.toPlainText())
-            if touch_data is not None:
-                new_data['touch'] = touch_data
-            else:
-                new_data['touch'] = []
-        except Exception as e:
-            QMessageBox.warning(
-                self,
-                self.tr("YAML 错误"),
-                self.tr("解析触摸 YAML 出错: {error}").format(error=e),
-            )
-            return False
+        if hasattr(self, 'touch_editors'):
+            try:
+                new_data['touch'] = [self._serialize_touch_editor(editor) for editor in self.touch_editors]
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    self.tr("错误"),
+                    self.tr("保存触摸配置出错: {error}").format(error=e),
+                )
+                return False
+        else:
+            try:
+                touch_data = yaml.safe_load(self.edit_touch.toPlainText())
+                if touch_data is not None:
+                    new_data['touch'] = touch_data
+                else:
+                    new_data['touch'] = []
+            except Exception as e:
+                QMessageBox.warning(
+                    self,
+                    self.tr("YAML 错误"),
+                    self.tr("解析触摸 YAML 出错: {error}").format(error=e),
+                )
+                return False
         
         if not silent:
             if not self._confirm_device_changes(old_data, new_data):
@@ -3742,163 +1806,13 @@ class M5BuilderGUI(QMainWindow):
             )
 
     def _adjust_table_height(self, table_widget=None):
-        """Adjust table height based on content"""
-        if table_widget is None:
-            table_widget = self.table_pins
-            
-        header_height = table_widget.horizontalHeader().height()
-        row_height = table_widget.rowHeight(0) if table_widget.rowCount() > 0 else 30
-        # Calculate total height: header + rows + some padding
-        total_height = header_height + (row_height * table_widget.rowCount()) + 4
-        
-        # Set a minimum height (e.g. 100px) and let it grow
-        table_widget.setMinimumHeight(max(100, total_height))
-        table_widget.setMaximumHeight(max(100, total_height)) # Fix height to content to avoid scrollbar inside table if possible
+        _adjust_table_height_fn(table_widget if table_widget is not None else self.table_pins)
 
     def _add_additional_test_editor(self, test_data):
-        widget = QGroupBox()
-        widget.setStyleSheet("QGroupBox { border: 1px solid #ccc; border-radius: 5px; margin-top: 10px; padding-top: 10px; }")
-        layout = QVBoxLayout(widget)
-        
-        # Top Row: Type, Score, Delete
-        top_layout = QHBoxLayout()
-        
-        combo_type = NoScrollComboBox()
-        combo_type.addItems(["GPIO Read (0)", "I2C Read Reg (1)", "SPI Read Cmd (2)"])
-        type_val = int(test_data.get('type', 0))
-        if 0 <= type_val <= 2:
-            combo_type.setCurrentIndex(type_val)
-        
-        sb_score = NoScrollSpinBox()
-        sb_score.setRange(-999, 999)
-        sb_score.setValue(int(test_data.get('score', 1)))
-        sb_score.setPrefix("Score: ")
-        
-        btn_del = QPushButton(self.tr("删除"))
-        btn_del.setStyleSheet("background-color: #FFCDD2; color: #B71C1C;")
-        
-        top_layout.addWidget(QLabel(self.tr("类型:")))
-        top_layout.addWidget(combo_type)
-        top_layout.addWidget(sb_score)
-        top_layout.addStretch()
-        top_layout.addWidget(btn_del)
-        
-        layout.addLayout(top_layout)
-        
-        # Parameters Grid
-        grid = QGridLayout()
-        layout.addLayout(grid)
-        
-        # Create all possible widgets
-        widgets = {}
-        
-        def add_param(key, label, row, col, default=0, is_hex=False):
-            lbl = QLabel(label)
-            if is_hex:
-                val = test_data.get(key, default)
-                txt = f"0x{val:X}" if isinstance(val, int) else str(val)
-                inp = QLineEdit(txt)
-            else:
-                inp = NoScrollSpinBox()
-                inp.setRange(-1, 999999)
-                inp.setValue(int(test_data.get(key, default)))
-            
-            grid.addWidget(lbl, row, col)
-            grid.addWidget(inp, row, col+1)
-            widgets[key] = (lbl, inp)
-            return inp
-
-        # GPIO Params
-        # pin_a (GPIO), pin_b (Mode), expect
-        add_param('gpio_pin', self.tr("GPIO:"), 0, 0, -1)
-        
-        lbl_mode = QLabel(self.tr("模式:"))
-        combo_mode = NoScrollComboBox()
-        combo_mode.addItems(["INPUT (0)", "INPUT_PULLUP (1)", "INPUT_PULLDOWN (2)"])
-        mode_val = int(test_data.get('pin_b', 0)) if type_val == 0 else 0
-        if 0 <= mode_val <= 2: combo_mode.setCurrentIndex(mode_val)
-        grid.addWidget(lbl_mode, 0, 2)
-        grid.addWidget(combo_mode, 0, 3)
-        widgets['gpio_mode'] = (lbl_mode, combo_mode)
-        
-        add_param('gpio_expect', self.tr("期望(0/1):"), 0, 4, 0)
-
-        # I2C Params
-        # port, pin_a (SDA), pin_b (SCL), freq, addr, reg, mask, expect
-        add_param('i2c_port', self.tr("Port:"), 1, 0, 0)
-        add_param('i2c_sda', self.tr("SDA:"), 1, 2, -1)
-        add_param('i2c_scl', self.tr("SCL:"), 1, 4, -1)
-        add_param('i2c_freq', self.tr("Freq:"), 2, 0, 400000)
-        add_param('i2c_addr', self.tr("Addr:"), 2, 2, 0, is_hex=True)
-        add_param('i2c_reg', self.tr("Reg:"), 2, 4, 0, is_hex=True)
-        add_param('i2c_mask', self.tr("Mask:"), 3, 0, 0xFF, is_hex=True)
-        add_param('i2c_expect', self.tr("Expect:"), 3, 2, 0, is_hex=True)
-
-        # SPI Params
-        # pin_a (MOSI), pin_b (MISO), pin_c (SCLK), pin_d (CS), reg (CMD), mask, expect
-        add_param('spi_mosi', self.tr("MOSI:"), 4, 0, -1)
-        add_param('spi_miso', self.tr("MISO:"), 4, 2, -1)
-        add_param('spi_sclk', self.tr("SCLK:"), 4, 4, -1)
-        add_param('spi_cs', self.tr("CS:"), 5, 0, -1)
-        add_param('spi_cmd', self.tr("CMD:"), 5, 2, 0, is_hex=True)
-        add_param('spi_mask', self.tr("Mask:"), 5, 4, 0xFF, is_hex=True)
-        add_param('spi_expect', self.tr("Expect:"), 6, 0, 0, is_hex=True)
-
-        # Update visibility based on type
-        def update_visibility():
-            t = combo_type.currentIndex()
-            
-            # Hide all first
-            for k, (l, w) in widgets.items():
-                l.hide()
-                w.hide()
-            
-            if t == 0: # GPIO
-                widgets['gpio_pin'][0].show(); widgets['gpio_pin'][1].show()
-                widgets['gpio_mode'][0].show(); widgets['gpio_mode'][1].show()
-                widgets['gpio_expect'][0].show(); widgets['gpio_expect'][1].show()
-                
-                # Restore values if switching back? 
-                # For now, we just map them on save.
-                
-            elif t == 1: # I2C
-                widgets['i2c_port'][0].show(); widgets['i2c_port'][1].show()
-                widgets['i2c_sda'][0].show(); widgets['i2c_sda'][1].show()
-                widgets['i2c_scl'][0].show(); widgets['i2c_scl'][1].show()
-                widgets['i2c_freq'][0].show(); widgets['i2c_freq'][1].show()
-                widgets['i2c_addr'][0].show(); widgets['i2c_addr'][1].show()
-                widgets['i2c_reg'][0].show(); widgets['i2c_reg'][1].show()
-                widgets['i2c_mask'][0].show(); widgets['i2c_mask'][1].show()
-                widgets['i2c_expect'][0].show(); widgets['i2c_expect'][1].show()
-                
-            elif t == 2: # SPI
-                widgets['spi_mosi'][0].show(); widgets['spi_mosi'][1].show()
-                widgets['spi_miso'][0].show(); widgets['spi_miso'][1].show()
-                widgets['spi_sclk'][0].show(); widgets['spi_sclk'][1].show()
-                widgets['spi_cs'][0].show(); widgets['spi_cs'][1].show()
-                widgets['spi_cmd'][0].show(); widgets['spi_cmd'][1].show()
-                widgets['spi_mask'][0].show(); widgets['spi_mask'][1].show()
-                widgets['spi_expect'][0].show(); widgets['spi_expect'][1].show()
-
-        combo_type.currentIndexChanged.connect(update_visibility)
-        update_visibility() # Initial state
-        
-        self.layout_test_items.addWidget(widget)
-        
-        editor_dict = {
-            'widget': widget,
-            'type': combo_type,
-            'score': sb_score,
-            'widgets': widgets
-        }
-        self.additional_test_editors.append(editor_dict)
-        
-        btn_del.clicked.connect(lambda: self._delete_additional_test_editor(widget, editor_dict))
+        PrereqEditorManager.add_additional_test_editor(self.tr, self.layout_test_items, test_data, self.additional_test_editors)
 
     def _delete_additional_test_editor(self, widget, editor_dict):
-        widget.deleteLater()
-        if editor_dict in self.additional_test_editors:
-            self.additional_test_editors.remove(editor_dict)
+        PrereqEditorManager.delete_additional_test_editor(widget, editor_dict, self.additional_test_editors)
 
     def show_mcu_details(self, item_data):
         """Show MCU category details"""

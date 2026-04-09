@@ -494,7 +494,7 @@ class M5HeaderGenerator:
                     # Displays
                     content.append("        {")
                     for disp in displays:
-                        driver = disp.get('driver', '')
+                        controller = disp.get('controller', disp.get('driver', ''))
                         bus_type = M5HeaderGenerator._get_bus_type(disp.get('bus_type', 'spi'))
                         width = disp.get('width', 0)
                         height = disp.get('height', 0)
@@ -524,7 +524,7 @@ class M5HeaderGenerator:
                         prereqs = disp.get('prerequisites', [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
-                        content.append(f'            {{ "{driver}", {bus_type}, {width}, {height}, {freq}, '
+                        content.append(f'            {{ "{controller}", {bus_type}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("mosi")}, {get_pin_val("miso")}, {get_pin_val("sclk")}, '
                                     f'{get_pin_val("cs")}, {get_pin_val("dc")}, {get_pin_val("rst")}, {get_pin_val("bl")}, '
                                     f'0x{i2c_addr:02X}, '
@@ -535,7 +535,7 @@ class M5HeaderGenerator:
                     # Touches
                     content.append("        {")
                     for touch in touches:
-                        driver = touch.get('driver', '')
+                        controller = touch.get('controller', touch.get('driver', ''))
                         addr = M5HeaderGenerator._parse_int(touch.get('addr', 0))
                         width = touch.get('width', 0)
                         height = touch.get('height', 0)
@@ -557,7 +557,7 @@ class M5HeaderGenerator:
                         prereqs = touch.get('prerequisites', [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
-                        content.append(f'            {{ "{driver}", 0x{addr:02X}, {width}, {height}, {freq}, '
+                        content.append(f'            {{ "{controller}", 0x{addr:02X}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("sda")}, {get_pin_val("scl")}, {get_pin_val("int")}, {get_pin_val("rst")}, '
                                     f'{get_pin_str("rst")}, {prereq_str} }},')
                     content.append("        },")
