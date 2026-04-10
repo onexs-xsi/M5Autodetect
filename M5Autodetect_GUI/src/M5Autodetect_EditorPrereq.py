@@ -76,6 +76,15 @@ class PrereqEditorManager:
                 lbl.setFixedWidth(40)
                 return lbl
 
+            def add_delay_field(default_delay=0):
+                sb_delay = NoScrollSpinBox()
+                sb_delay.setRange(0, 5000)
+                sb_delay.setSuffix(" ms")
+                sb_delay.setValue(int(current_params.get('delay_ms', default_delay) or default_delay))
+                param_layout.addWidget(create_label("Delay:"))
+                param_layout.addWidget(sb_delay)
+                widgets['delay_ms'] = sb_delay
+
             def update_params_ui(type_text):
                 while param_layout.count():
                     item = param_layout.takeAt(0)
@@ -97,6 +106,7 @@ class PrereqEditorManager:
                     param_layout.addWidget(create_label("Level:"))
                     param_layout.addWidget(cb_level)
                     widgets['level'] = cb_level
+                    add_delay_field(10)
                     param_layout.addStretch()
 
                 elif type_text.startswith('i2c'):
@@ -199,6 +209,7 @@ class PrereqEditorManager:
                         param_layout.addWidget(sb_len)
                         widgets['len'] = sb_len
 
+                    add_delay_field(10)
                     param_layout.addStretch()
 
                 elif type_text.startswith('spi'):
@@ -282,6 +293,7 @@ class PrereqEditorManager:
                         param_layout.addWidget(sb_len)
                         widgets['len'] = sb_len
 
+                    add_delay_field(10)
                     param_layout.addStretch()
 
                 elif type_text.startswith('dsi'):
@@ -320,6 +332,7 @@ class PrereqEditorManager:
                         param_layout.addWidget(sb_len)
                         widgets['len'] = sb_len
 
+                    add_delay_field(5)
                     param_layout.addStretch()
 
             cb_type.currentTextChanged.connect(update_params_ui)

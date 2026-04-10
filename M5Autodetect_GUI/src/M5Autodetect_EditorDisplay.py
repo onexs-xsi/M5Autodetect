@@ -214,7 +214,7 @@ class DisplayEditorManager:
 
         sb_dsi_lane_mbps = NoScrollSpinBox()
         sb_dsi_lane_mbps.setRange(0, 4000)
-        sb_dsi_lane_mbps.setValue(int(protocol_dsi.get("lane_mbps", 960)))
+        sb_dsi_lane_mbps.setValue(int(protocol_dsi.get("lane_mbps", 1040)))
         dsi_form.addRow(tr("Lane Mbps:"), sb_dsi_lane_mbps)
 
         sb_dsi_ldo_chan_id = NoScrollSpinBox()

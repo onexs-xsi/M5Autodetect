@@ -129,9 +129,10 @@ class M5HeaderGenerator:
             cmd = M5HeaderGenerator._parse_int(p.get("cmd", 0))
             data_init = M5HeaderGenerator._generate_data_initializer(p.get("data", 0))
             length = M5HeaderGenerator._parse_int(p.get("len", 0))
+            delay_ms = M5HeaderGenerator._parse_int(p.get("delay_ms", 0))
 
             lines.append(
-                f"            {{ {p_type}, {gpio}, {level}, 0x{addr:02X}, 0x{reg:02X}, 0x{cmd:02X}, {data_init}, {length} }},"
+                f"            {{ {p_type}, {gpio}, {level}, 0x{addr:02X}, 0x{reg:02X}, 0x{cmd:02X}, {data_init}, {length}, {delay_ms} }},"
             )
         lines.append("        }")
         return "\n".join(lines)
@@ -214,6 +215,7 @@ class M5HeaderGenerator:
         content.append("    uint8_t cmd;")
         content.append("    std::vector<uint8_t> data;")
         content.append("    int len;")
+        content.append("    int delay_ms = 0;")
         content.append("};")
         content.append("")
 

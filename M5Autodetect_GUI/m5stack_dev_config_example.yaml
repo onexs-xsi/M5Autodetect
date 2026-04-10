@@ -25,6 +25,15 @@ Sample Configuration:
               dc: 15
               rst: 4
               bl: 32
+            prerequisites:
+              - type: gpio
+                gpio: 4
+                level: 0
+                delay_ms: 100
+              - type: gpio
+                gpio: 4
+                level: 1
+                delay_ms: 100
           - driver: i2c
             width: 128
             height: 64

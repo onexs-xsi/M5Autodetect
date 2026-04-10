@@ -13,9 +13,9 @@ enum board_t {
     board_M5AtomEchoS3R,
     board_M5AtomS3,
     board_M5AtomS3Lite,
+    board_M5Tab5_ST7121,
     board_M5Tab5_ST7123,
     board_M5Tab5_IlI9881c,
-    board_M5Tab5_ST7121,
     board_M5AtomLite,
     board_M5AtomMatrix,
 };
@@ -26,9 +26,9 @@ inline const char* getBoardName(board_t board) {
         case board_M5AtomEchoS3R: return "M5AtomEchoS3R";
         case board_M5AtomS3: return "M5AtomS3";
         case board_M5AtomS3Lite: return "M5AtomS3Lite";
+        case board_M5Tab5_ST7121: return "M5Tab5_ST7121";
         case board_M5Tab5_ST7123: return "M5Tab5_ST7123";
         case board_M5Tab5_IlI9881c: return "M5Tab5_IlI9881c";
-        case board_M5Tab5_ST7121: return "M5Tab5_ST7121";
         case board_M5AtomLite: return "M5AtomLite";
         case board_M5AtomMatrix: return "M5AtomMatrix";
         default: return "Unknown";
@@ -61,6 +61,7 @@ struct Prerequisite {
     uint8_t cmd;
     std::vector<uint8_t> data;
     int len;
+    int delay_ms = 0;
 };
 
 struct I2CDetect {
