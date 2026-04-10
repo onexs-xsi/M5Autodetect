@@ -8,6 +8,15 @@
 #include "data/M5Autodetect_DeviceData.h"
 #include "platform/M5Autodetect_IdfI2C.h"
 
+#if __has_include(<esp_lcd_mipi_dsi.h>)
+#include <esp_ldo_regulator.h>
+#include <esp_lcd_mipi_dsi.h>
+#include <esp_lcd_panel_io.h>
+#define M5_AUTODETECT_DSI_SUPPORTED 1
+#else
+#define M5_AUTODETECT_DSI_SUPPORTED 0
+#endif
+
 #define LOG_LOCAL_LEVEL ESP_LOG_VERBOSE
 #include "esp_log.h"
 
@@ -189,6 +198,81 @@ static uint32_t readDisplayID(const m5::autodetect::DisplayConfig& disp) {
     return result;
 }
 
+#if M5_AUTODETECT_DSI_SUPPORTED
+/// Temporarily initialise a MIPI-DSI DBI channel, run any DSI prerequisites,
+/// send `identify_cmd` via DCS generic read, and return the panel ID.
+/// The DSI bus / LDO / IO are fully released before returning so that the
+/// application can later initialise them independently.
+static uint32_t readDisplayID_DSI(const m5::autodetect::DisplayConfig& disp) {
+    esp_ldo_channel_handle_t phy_pwr = nullptr;
+    esp_lcd_dsi_bus_handle_t dsi_bus = nullptr;
+    esp_lcd_panel_io_handle_t io_dbi = nullptr;
+    uint32_t result = 0;
+
+    // 1. Power LDO
+    esp_ldo_channel_config_t ldo_cfg = {};
+    ldo_cfg.chan_id = disp.dsi_ldo_chan_id;
+    ldo_cfg.voltage_mv = disp.dsi_ldo_voltage_mv;
+    if (esp_ldo_acquire_channel(&ldo_cfg, &phy_pwr) != ESP_OK) goto cleanup;
+
+    // 2. Create DSI bus
+    {
+        esp_lcd_dsi_bus_config_t bus_cfg = {};
+        bus_cfg.bus_id = disp.dsi_bus_id;
+        bus_cfg.num_data_lanes = disp.dsi_lane_num;
+        bus_cfg.phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT;
+        bus_cfg.lane_bit_rate_mbps = disp.dsi_lane_mbps;
+        if (esp_lcd_new_dsi_bus(&bus_cfg, &dsi_bus) != ESP_OK) goto cleanup;
+    }
+
+    // 3. Create DBI panel IO for DCS commands
+    {
+        esp_lcd_dbi_io_config_t dbi_cfg = {};
+        dbi_cfg.virtual_channel = 0;
+        dbi_cfg.lcd_cmd_bits = 8;
+        dbi_cfg.lcd_param_bits = 8;
+        if (esp_lcd_new_panel_io_dbi(dsi_bus, &dbi_cfg, &io_dbi) != ESP_OK) goto cleanup;
+    }
+
+    // Short settle time for the DSI link
+    delay(80);
+
+    // 4. Run DSI prerequisites (e.g. ILI9881C page switch)
+    for (const auto& p : disp.prerequisites) {
+        if (p.type == m5::autodetect::PrereqType::DSI_WRITE && !p.data.empty()) {
+            esp_lcd_panel_io_tx_param(io_dbi, p.cmd, p.data.data(), p.data.size());
+            delay(5);
+        }
+    }
+
+    // 5. Read panel ID via sequential single-byte reads (one per consecutive register),
+    //    matching the approach used by the espressif esp_lcd_ili9881c driver which reads
+    //    ID1/ID2/ID3 individually (rx_param reg+0, reg+1, reg+2 each 1 byte).
+    {
+        int read_len = 2; // default: read 2 bytes for a 16-bit ID
+        if (disp.identify_mask != -1) {
+            uint32_t mask = (uint32_t)disp.identify_mask;
+            read_len = (mask > 0xFFFF) ? 3 : (mask > 0xFF) ? 2 : 1;
+        }
+        for (int i = 0; i < read_len; i++) {
+            uint8_t byte_val = 0;
+            if (esp_lcd_panel_io_rx_param(io_dbi, disp.identify_cmd + i, &byte_val, 1) == ESP_OK) {
+                result = (result << 8) | byte_val;
+            } else {
+                result = 0;
+                break;
+            }
+        }
+    }
+
+cleanup:
+    if (io_dbi) esp_lcd_panel_io_del(io_dbi);
+    if (dsi_bus) esp_lcd_del_dsi_bus(dsi_bus);
+    if (phy_pwr) esp_ldo_release_channel(phy_pwr);
+    return result;
+}
+#endif // M5_AUTODETECT_DSI_SUPPORTED
+
 M5Autodetect::M5Autodetect() {
 }
 
@@ -262,7 +346,7 @@ static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& pr
                 i2c.beginTransmission(p.addr);
                 i2c.write(p.reg);
                 if (p.type == m5::autodetect::PrereqType::I2C_WRITE) {
-                    i2c.write(p.data);
+                    for (auto b : p.data) { i2c.write(b); }
                     i2c.endTransmission();
                 } else {
                     i2c.endTransmission(false);
@@ -296,7 +380,7 @@ static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& pr
                 spi_write(p.cmd);
                 
                 if (p.type == m5::autodetect::PrereqType::SPI_WRITE) {
-                    spi_write(p.data);
+                    for (auto b : p.data) { spi_write(b); }
                 } else {
                     int len = (p.len > 0) ? p.len : 1;
                     for (int j=0; j<len; j++) {
@@ -313,6 +397,10 @@ static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& pr
                 digitalWrite(pin_cs, HIGH);
                 delay(10);
             }
+        }
+        else if (p.type == m5::autodetect::PrereqType::DSI_WRITE || p.type == m5::autodetect::PrereqType::DSI_READ) {
+            // DSI bus prerequisites are recorded for documentation / future use;
+            // M5Autodetect does not initialise a DSI bus at detection time.
         }
     }
 }
@@ -651,6 +739,32 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                         touch_matched = true;
                         current_score++;
                         if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Touch I2C Match (+1) (addr: 0x%02X)\r\n", touch.addr);
+
+                        // Identify by register value if configured (e.g. fw_version to distinguish ST7121/ST7123)
+                        if (touch.identify_reg >= 0) {
+                            i2c.beginTransmission(touch.addr);
+                            i2c.write((touch.identify_reg >> 8) & 0xFF);
+                            i2c.write(touch.identify_reg & 0xFF);
+                            bool ident_ok = false;
+                            if (i2c.endTransmission(false) == 0 && i2c.requestFrom((int)touch.addr, 1) == 1) {
+                                uint8_t reg_val = i2c.read();
+                                uint32_t mask = (touch.identify_mask < 0) ? 0xFF : (uint32_t)touch.identify_mask;
+                                uint32_t expect = (uint32_t)touch.identify_expect & mask;
+                                if ((reg_val & mask) == expect) {
+                                    ident_ok = true;
+                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Touch ID Reg[0x%04X]=0x%02X\r\n", touch.identify_reg, reg_val);
+                                } else {
+                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch ID Reg Mismatch (reg[0x%04X] Got: 0x%02X, Exp: 0x%02X)\r\n", touch.identify_reg, (uint8_t)(reg_val & mask), (uint8_t)expect);
+                                }
+                            } else {
+                                if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch ID Reg Read Failed (reg: 0x%04X)\r\n", touch.identify_reg);
+                            }
+                            if (!ident_ok) {
+                                touch_matched = false;
+                                current_score--;
+                                step_failed = true;
+                            }
+                        }
                     } else {
                         if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch I2C Failed (addr: 0x%02X)\r\n", touch.addr);
                     }
@@ -667,30 +781,48 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             }
         }
 
-        // 6. Screen parameters (only check SPI-bus displays with identify_cmd)
+        // 6. Screen parameters (SPI bit-bang + DSI DCS probing)
         if (!step_failed) {
             bool screen_checked = false;
             bool screen_matched = false;
             for (const auto& disp : device.displays) {
                 if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
                     runPrerequisites(disp.prerequisites, -1, -1, disp.pin_mosi, disp.pin_miso, disp.pin_sclk, disp.pin_cs, disp.freq);
+                    if (disp.identify_cmd >= 0) {
+                        screen_checked = true;
+                        uint32_t id = readDisplayID(disp);
+                        uint32_t mask = (disp.identify_mask == -1) ? 0xFFFFFFFF : (uint32_t)disp.identify_mask;
+                        uint32_t expect = (uint32_t)disp.identify_expect;
+                        if ((id & mask) == expect) {
+                            screen_matched = true;
+                            current_score++;
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
+                        } else {
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
+                        }
+                    }
                 }
-                if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI) && disp.identify_cmd >= 0) {
+#if M5_AUTODETECT_DSI_SUPPORTED
+                else if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_DSI)
+                         && disp.identify_cmd >= 0 && disp.dsi_lane_num > 0) {
                     screen_checked = true;
-                    uint32_t id = readDisplayID(disp);
+                    uint32_t id = readDisplayID_DSI(disp);
                     uint32_t mask = (disp.identify_mask == -1) ? 0xFFFFFFFF : (uint32_t)disp.identify_mask;
                     uint32_t expect = (uint32_t)disp.identify_expect;
-                    
                     if ((id & mask) == expect) {
                         screen_matched = true;
                         current_score++;
-                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] DSI Screen ID Match (+1) (0x%04X)\r\n", id);
                     } else {
-                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] DSI Screen ID Mismatch (Got: 0x%04X, Exp: 0x%04X)\r\n", id & mask, expect);
                     }
-                } else if (disp.bus_type != static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
-                    // For non-SPI displays we don't have an ID probe path yet; treat as skip
+                }
+#endif
+                else if (disp.bus_type != static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)) {
+                    // Non-SPI / non-DSI displays: skip
+                    current_score++;
                     skip_count++;
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] Display (%s, bus=%d) - no probe path (+1)\r\n", disp.driver, disp.bus_type);
                 }
             }
             

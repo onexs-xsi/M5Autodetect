@@ -61,7 +61,18 @@ class M5HeaderGenerator:
         if val == 'i2c_write': return 'PrereqType::I2C_WRITE'
         if val == 'spi_read': return 'PrereqType::SPI_READ'
         if val == 'spi_write': return 'PrereqType::SPI_WRITE'
+        if val == 'dsi_write': return 'PrereqType::DSI_WRITE'
+        if val == 'dsi_read': return 'PrereqType::DSI_READ'
         return 'PrereqType::NONE'
+
+    @staticmethod
+    def _generate_data_initializer(data_val):
+        """Generate C++ initializer for std::vector<uint8_t> data field."""
+        if isinstance(data_val, list):
+            items = ', '.join(f'0x{M5HeaderGenerator._parse_int(b):02X}' for b in data_val)
+            return '{' + items + '}'
+        v = M5HeaderGenerator._parse_int(data_val)
+        return '{' + f'0x{v:02X}' + '}'
 
     @staticmethod
     def _generate_prerequisites(prereq_list):
@@ -78,10 +89,10 @@ class M5HeaderGenerator:
             addr = M5HeaderGenerator._parse_int(p.get('addr', 0))
             reg = M5HeaderGenerator._parse_int(p.get('reg', 0))
             cmd = M5HeaderGenerator._parse_int(p.get('cmd', 0))
-            data = M5HeaderGenerator._parse_int(p.get('data', 0))
+            data_init = M5HeaderGenerator._generate_data_initializer(p.get('data', 0))
             length = M5HeaderGenerator._parse_int(p.get('len', 0))
             
-            lines.append(f"            {{ {p_type}, {gpio}, {level}, 0x{addr:02X}, 0x{reg:02X}, 0x{cmd:02X}, 0x{data:02X}, {length} }},")
+            lines.append(f"            {{ {p_type}, {gpio}, {level}, 0x{addr:02X}, 0x{reg:02X}, 0x{cmd:02X}, {data_init}, {length} }},")
         lines.append("        }")
         return "\n".join(lines)
 
@@ -148,7 +159,9 @@ class M5HeaderGenerator:
         content.append("    I2C_READ = 2,")
         content.append("    I2C_WRITE = 3,")
         content.append("    SPI_READ = 4,")
-        content.append("    SPI_WRITE = 5")
+        content.append("    SPI_WRITE = 5,")
+        content.append("    DSI_WRITE = 6,")
+        content.append("    DSI_READ = 7")
         content.append("};")
         content.append("")
 
@@ -159,7 +172,7 @@ class M5HeaderGenerator:
         content.append("    uint8_t addr;")
         content.append("    uint8_t reg;")
         content.append("    uint8_t cmd;")
-        content.append("    uint8_t data;")
+        content.append("    std::vector<uint8_t> data;")
         content.append("    int len;")
         content.append("};")
         content.append("")
@@ -222,6 +235,12 @@ class M5HeaderGenerator:
         content.append("    int identify_mask;")
         content.append("    bool identify_rst_before;")
         content.append("    int identify_rst_wait;")
+        content.append("    // DSI protocol fields (only used when bus_type == BUS_DSI)")
+        content.append("    int dsi_bus_id;")
+        content.append("    int dsi_lane_num;")
+        content.append("    int dsi_lane_mbps;")
+        content.append("    int dsi_ldo_chan_id;")
+        content.append("    int dsi_ldo_voltage_mv;")
         content.append("    std::vector<Prerequisite> prerequisites;")
         content.append("};")
         content.append("")
@@ -238,8 +257,10 @@ class M5HeaderGenerator:
         content.append("    int pin_rst;")
         content.append("    const char* pin_rst_str;")
         content.append("    std::vector<Prerequisite> prerequisites;")
-        content.append("};")
-        content.append("")
+        content.append("    int identify_reg;")
+        content.append("    int identify_expect;")
+        content.append("    int identify_mask;")
+        content.append("};")  
 
         content.append("enum TestType {")
         content.append("    TEST_GPIO_READ = 0,")
@@ -521,6 +542,14 @@ class M5HeaderGenerator:
                         id_rst_before = "true" if identify.get('rst_before', False) else "false"
                         id_rst_wait = M5HeaderGenerator._parse_int(identify.get('rst_wait', 0))
 
+                        # DSI protocol fields
+                        protocol_dsi = disp.get('protocol', {}).get('dsi', {})
+                        dsi_bus_id = M5HeaderGenerator._parse_int(protocol_dsi.get('bus_id', 0))
+                        dsi_lane_num = M5HeaderGenerator._parse_int(protocol_dsi.get('lane_num', 0))
+                        dsi_lane_mbps = M5HeaderGenerator._parse_int(protocol_dsi.get('lane_mbps', 0))
+                        dsi_ldo_chan_id = M5HeaderGenerator._parse_int(protocol_dsi.get('ldo_chan_id', 0))
+                        dsi_ldo_voltage_mv = M5HeaderGenerator._parse_int(protocol_dsi.get('ldo_voltage_mv', 0))
+
                         prereqs = disp.get('prerequisites', [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
@@ -529,7 +558,9 @@ class M5HeaderGenerator:
                                     f'{get_pin_val("cs")}, {get_pin_val("dc")}, {get_pin_val("rst")}, {get_pin_val("bl")}, '
                                     f'0x{i2c_addr:02X}, '
                                     f'{get_pin_str("rst")}, {get_pin_str("bl")}, '
-                                    f'{id_cmd}, {id_expect}, {id_mask}, {id_rst_before}, {id_rst_wait}, {prereq_str} }},')
+                                    f'{id_cmd}, {id_expect}, {id_mask}, {id_rst_before}, {id_rst_wait}, '
+                                    f'{dsi_bus_id}, {dsi_lane_num}, {dsi_lane_mbps}, {dsi_ldo_chan_id}, {dsi_ldo_voltage_mv}, '
+                                    f'{prereq_str} }},')
                     content.append("        },")
 
                     # Touches
@@ -557,9 +588,14 @@ class M5HeaderGenerator:
                         prereqs = touch.get('prerequisites', [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
+                        identify_t = touch.get('identify', {})
+                        id_reg = M5HeaderGenerator._parse_int(identify_t.get('reg', -1)) if identify_t else -1
+                        id_expect = M5HeaderGenerator._parse_int(identify_t.get('expect', -1)) if identify_t else -1
+                        id_mask = M5HeaderGenerator._parse_int(identify_t.get('mask', -1)) if identify_t else -1
+
                         content.append(f'            {{ "{controller}", 0x{addr:02X}, {width}, {height}, {freq}, '
                                     f'{get_pin_val("sda")}, {get_pin_val("scl")}, {get_pin_val("int")}, {get_pin_val("rst")}, '
-                                    f'{get_pin_str("rst")}, {prereq_str} }},')
+                                    f'{get_pin_str("rst")}, {prereq_str}, {id_reg}, {id_expect}, {id_mask} }},')  
                     content.append("        },")
 
                     # Additional Tests

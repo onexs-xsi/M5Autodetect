@@ -15,4 +15,5 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_spi
         esp_psram
+        esp_lcd
 )

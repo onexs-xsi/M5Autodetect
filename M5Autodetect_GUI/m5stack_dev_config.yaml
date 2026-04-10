@@ -219,6 +219,43 @@ mcu_categories:
           addr: 67
           reg: 7
           data: 0
+      display:
+      - controller: ST7123
+        bus_type: dsi
+        width: 720
+        height: 1280
+        freq: 0
+        protocol:
+          dsi:
+            bus_id: 0
+            lane_num: 2
+            lane_mbps: 960
+            ldo_chan_id: 3
+            ldo_voltage_mv: 2500
+        probe:
+          type: dsi_cmd_match
+          cmd: 244
+          expect: 28963
+          mask: 65535
+        identify:
+          cmd: 244
+          expect: 28963
+          mask: 65535
+        pins: {}
+      touch:
+      - controller: ST7123
+        addr: 85
+        width: 720
+        height: 1280
+        freq: 400000
+        pins:
+          sda: 31
+          scl: 32
+          int: 23
+        identify:
+          reg: 0
+          expect: 3
+          mask: 255
     - name: IlI9881c
       check_pins:
         21:
@@ -273,7 +310,111 @@ mcu_categories:
           addr: 104
         - name: Unknown_0x14
           addr: 20
-        detect_count: 8
+          required: false
+        detect_count: 7
+        prerequisites:
+        - type: gpio
+          gpio: 23
+          level: 1
+        - type: i2c_write
+          addr: 67
+          reg: 3
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 48
+        - type: i2c_write
+          addr: 67
+          reg: 7
+          data: 0
+      display:
+      - bus_type: dsi
+        width: 720
+        height: 1280
+        freq: 0
+        controller: ILI9881C
+        driver: ILI9881C
+        protocol:
+          dsi:
+            bus_id: 0
+            lane_num: 2
+            lane_mbps: 960
+            ldo_chan_id: 3
+            ldo_voltage_mv: 2500
+        pins: {}
+        probe:
+          type: dsi_cmd_match
+          cmd: 0
+          expect: 39041
+          mask: 65535
+        identify:
+          cmd: 0
+          expect: 39041
+          mask: 65535
+        prerequisites:
+        - type: dsi_write
+          cmd: 255
+          data:
+          - 152
+          - 129
+          - 1
+    - name: ST7121
+      check_pins:
+        21:
+          mode: input
+          expect: 1
+        23:
+          mode: input
+          expect: 1
+        29:
+          mode: input
+          expect: 1
+        31:
+          mode: input
+          expect: 1
+        32:
+          mode: input
+          expect: 1
+        39:
+          mode: input
+          expect: 1
+        40:
+          mode: input
+          expect: 1
+        41:
+          mode: input
+          expect: 1
+        42:
+          mode: input
+          expect: 1
+        43:
+          mode: input
+          expect: 1
+        44:
+          mode: input
+          expect: 1
+      i2c_internal:
+      - port: 0
+        sda: 31
+        scl: 32
+        freq: 400000
+        detect:
+        - name: Unknown_0x10
+          addr: 16
+        - name: Unknown_0x32
+          addr: 50
+        - name: Unknown_0x40
+          addr: 64
+        - name: Unknown_0x41
+          addr: 65
+        - name: Unknown_0x43
+          addr: 67
+        - name: Unknown_0x44
+          addr: 68
+        - name: Unknown_0x68
+          addr: 104
+        detect_count: 7
         prerequisites:
         - type: i2c_write
           addr: 67
@@ -287,6 +428,43 @@ mcu_categories:
           addr: 67
           reg: 7
           data: 0
+      display:
+      - controller: ST7121
+        bus_type: dsi
+        width: 720
+        height: 1280
+        freq: 0
+        protocol:
+          dsi:
+            bus_id: 0
+            lane_num: 2
+            lane_mbps: 1300
+            ldo_chan_id: 3
+            ldo_voltage_mv: 2500
+        probe:
+          type: dsi_cmd_match
+          cmd: 244
+          expect: 28963
+          mask: 65535
+        identify:
+          cmd: 244
+          expect: 28963
+          mask: 65535
+        pins: {}
+      touch:
+      - controller: ST7121
+        addr: 85
+        width: 720
+        height: 1280
+        freq: 400000
+        pins:
+          sda: 31
+          scl: 32
+          int: 23
+        identify:
+          reg: 0
+          expect: 1
+          mask: 255
 - mcu: ESP32
   devices:
   - name: M5AtomLite

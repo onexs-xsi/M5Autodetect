@@ -24,7 +24,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "gc9107", 0, 128, 128, 40000000, 21, -1, 15, 14, 42, 48, -1, 0x00, nullptr, "I2C(45,0)@0x30", 4, 9504767, 16777215, true, 120, {} },
+            { "gc9107", 0, 128, 128, 40000000, 21, -1, 15, 14, 42, 48, -1, 0x00, nullptr, "I2C(45,0)@0x30", 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, {} },
         },
         {
         },
@@ -75,7 +75,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "gc9107", 0, 128, 128, 40000000, 21, -1, 17, 15, 33, 34, 16, 0x00, nullptr, nullptr, 4, 9504767, 16777215, true, 120, {} },
+            { "gc9107", 0, 128, 128, 40000000, 21, -1, 17, 15, 33, 34, 16, 0x00, nullptr, nullptr, 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, {} },
         },
         {
         },
@@ -136,16 +136,18 @@ const std::vector<DeviceInfo> devices_data = {
                 { 0x44, true },
                 { 0x68, true },
             }, {
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, 0x30, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, 0x30, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, 0x00, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0 },
         } },
         },
         {
         },
         {
+            { "ST7123", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28963, 65535, false, 0, 0, 2, 960, 3, 2500, {} },
         },
         {
+            { "ST7123", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 3, 255 },
         },
         {
         }
@@ -170,7 +172,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 44, 0, 1 },
         },
         {
-            { 0, 31, 32, 400000, 8, false, {
+            { 0, 31, 32, 400000, 7, false, {
                 { 0x10, true },
                 { 0x32, true },
                 { 0x40, true },
@@ -178,18 +180,68 @@ const std::vector<DeviceInfo> devices_data = {
                 { 0x43, true },
                 { 0x44, true },
                 { 0x68, true },
-                { 0x14, true },
+                { 0x14, false },
             }, {
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, 0x30, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, 0x30, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, 0x00, 0 },
+            { PrereqType::GPIO_WRITE, 23, 1, 0x00, 0x00, 0x00, {0x00}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0 },
         } },
         },
         {
         },
         {
+            { "ILI9881C", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 0, 39041, 65535, false, 0, 0, 2, 960, 3, 2500, {
+            { PrereqType::DSI_WRITE, -1, 0, 0x00, 0x00, 0xFF, {0x98, 0x81, 0x01}, 0 },
+        } },
         },
         {
+        },
+        {
+        }
+    },
+    {
+        "M5Tab5_ST7121",
+        "SKU:C145/K145",
+        "ESP32-P4",
+        board_M5Tab5_ST7121,
+        true,
+        11,
+        {
+            { 21, 0, 1 },
+            { 23, 0, 1 },
+            { 29, 0, 1 },
+            { 31, 0, 1 },
+            { 32, 0, 1 },
+            { 39, 0, 1 },
+            { 40, 0, 1 },
+            { 41, 0, 1 },
+            { 42, 0, 1 },
+            { 43, 0, 1 },
+            { 44, 0, 1 },
+        },
+        {
+            { 0, 31, 32, 400000, 7, false, {
+                { 0x10, true },
+                { 0x32, true },
+                { 0x40, true },
+                { 0x41, true },
+                { 0x43, true },
+                { 0x44, true },
+                { 0x68, true },
+            }, {
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0 },
+        } },
+        },
+        {
+        },
+        {
+            { "ST7121", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28963, 65535, false, 0, 0, 2, 1300, 3, 2500, {} },
+        },
+        {
+            { "ST7121", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 1, 255 },
         },
         {
         }

@@ -15,6 +15,7 @@ enum board_t {
     board_M5AtomS3Lite,
     board_M5Tab5_ST7123,
     board_M5Tab5_IlI9881c,
+    board_M5Tab5_ST7121,
     board_M5AtomLite,
     board_M5AtomMatrix,
 };
@@ -27,6 +28,7 @@ inline const char* getBoardName(board_t board) {
         case board_M5AtomS3Lite: return "M5AtomS3Lite";
         case board_M5Tab5_ST7123: return "M5Tab5_ST7123";
         case board_M5Tab5_IlI9881c: return "M5Tab5_IlI9881c";
+        case board_M5Tab5_ST7121: return "M5Tab5_ST7121";
         case board_M5AtomLite: return "M5AtomLite";
         case board_M5AtomMatrix: return "M5AtomMatrix";
         default: return "Unknown";
@@ -45,7 +47,9 @@ enum class PrereqType {
     I2C_READ = 2,
     I2C_WRITE = 3,
     SPI_READ = 4,
-    SPI_WRITE = 5
+    SPI_WRITE = 5,
+    DSI_WRITE = 6,
+    DSI_READ = 7
 };
 
 struct Prerequisite {
@@ -55,7 +59,7 @@ struct Prerequisite {
     uint8_t addr;
     uint8_t reg;
     uint8_t cmd;
-    uint8_t data;
+    std::vector<uint8_t> data;
     int len;
 };
 
@@ -113,6 +117,12 @@ struct DisplayConfig {
     int identify_mask;
     bool identify_rst_before;
     int identify_rst_wait;
+    // DSI protocol fields (only used when bus_type == BUS_DSI)
+    int dsi_bus_id;
+    int dsi_lane_num;
+    int dsi_lane_mbps;
+    int dsi_ldo_chan_id;
+    int dsi_ldo_voltage_mv;
     std::vector<Prerequisite> prerequisites;
 };
 
@@ -128,8 +138,10 @@ struct TouchConfig {
     int pin_rst;
     const char* pin_rst_str;
     std::vector<Prerequisite> prerequisites;
+    int identify_reg;
+    int identify_expect;
+    int identify_mask;
 };
-
 enum TestType {
     TEST_GPIO_READ = 0,
     TEST_I2C_READ_REG = 1,

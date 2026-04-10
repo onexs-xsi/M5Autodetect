@@ -46,7 +46,7 @@ class PrereqEditorManager:
             row_layout.setContentsMargins(0, 0, 0, 0)
 
             cb_type = NoScrollComboBox()
-            cb_type.addItems(['gpio', 'i2c_read', 'i2c_write', 'spi_read', 'spi_write'])
+            cb_type.addItems(['gpio', 'i2c_read', 'i2c_write', 'spi_read', 'spi_write', 'dsi_write', 'dsi_read'])
             if p_type_val:
                 cb_type.setCurrentText(p_type_val)
 
@@ -284,6 +284,44 @@ class PrereqEditorManager:
 
                     param_layout.addStretch()
 
+                elif type_text.startswith('dsi'):
+                    cmd_val = str(current_params.get('cmd', '0'))
+                    try:
+                        cmd_int = int(cmd_val, 16) if str(cmd_val).strip().lower().startswith('0x') else int(cmd_val)
+                        cmd_disp = f"0x{cmd_int:02X}"
+                    except Exception:
+                        cmd_disp = str(cmd_val)
+                    le_cmd = QLineEdit(cmd_disp)
+                    le_cmd.setPlaceholderText("0x00")
+                    le_cmd.setFixedWidth(60)
+                    param_layout.addWidget(create_label("Cmd:"))
+                    param_layout.addWidget(le_cmd)
+                    widgets['cmd'] = le_cmd
+
+                    if 'write' in type_text:
+                        data_val = current_params.get('data', [])
+                        if isinstance(data_val, list):
+                            data_disp = ' '.join(f'0x{b:02X}' if isinstance(b, int) else str(b) for b in data_val)
+                        else:
+                            try:
+                                data_disp = f"0x{int(data_val):02X}"
+                            except Exception:
+                                data_disp = str(data_val)
+                        le_data = QLineEdit(data_disp)
+                        le_data.setPlaceholderText("0x98 0x81 0x01")
+                        le_data.setFixedWidth(200)
+                        param_layout.addWidget(create_label("Data:"))
+                        param_layout.addWidget(le_data)
+                        widgets['data'] = le_data
+                    else:
+                        sb_len = NoScrollSpinBox()
+                        sb_len.setValue(int(current_params.get('len', 1)))
+                        param_layout.addWidget(create_label("Len:"))
+                        param_layout.addWidget(sb_len)
+                        widgets['len'] = sb_len
+
+                    param_layout.addStretch()
+
             cb_type.currentTextChanged.connect(update_params_ui)
             update_params_ui(cb_type.currentText())
 
@@ -300,6 +338,7 @@ class PrereqEditorManager:
 
             def get_params_dict():
                 res = {}
+                current_type = cb_type.currentText()
                 for k, w in widgets.items():
                     val = None
                     if isinstance(w, QComboBox):
@@ -313,13 +352,21 @@ class PrereqEditorManager:
                     elif isinstance(w, QLineEdit):
                         val = w.text().strip()
                         if val:
-                            try:
-                                if val.lower().startswith('0x'):
-                                    val = int(val, 16)
-                                else:
-                                    val = int(val)
-                            except ValueError:
-                                pass
+                            # DSI data is a list of bytes
+                            if k == 'data' and current_type.startswith('dsi'):
+                                try:
+                                    parts = [p.strip() for p in val.replace(',', ' ').split()]
+                                    val = [int(p, 16) if p.lower().startswith('0x') else int(p) for p in parts if p]
+                                except ValueError:
+                                    val = []
+                            else:
+                                try:
+                                    if val.lower().startswith('0x'):
+                                        val = int(val, 16)
+                                    else:
+                                        val = int(val)
+                                except ValueError:
+                                    pass
                     if val is not None and val != "":
                         res[k] = val
                 return res
