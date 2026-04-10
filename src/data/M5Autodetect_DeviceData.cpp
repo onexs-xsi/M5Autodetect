@@ -24,7 +24,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "gc9107", 0, 128, 128, 40000000, 21, -1, 15, 14, 42, 48, -1, 0x00, nullptr, "I2C(45,0)@0x30", 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, {} },
+            { "gc9107", 0, 128, 128, 40000000, 21, -1, 15, 14, 42, 48, -1, 0x00, nullptr, "I2C(45,0)@0x30", 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, static_cast<DSIIdentifyReadMode>(0), 0, 1, {} },
         },
         {
         },
@@ -75,7 +75,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "gc9107", 0, 128, 128, 40000000, 21, -1, 17, 15, 33, 34, 16, 0x00, nullptr, nullptr, 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, {} },
+            { "gc9107", 0, 128, 128, 40000000, 21, -1, 17, 15, 33, 34, 16, 0x00, nullptr, nullptr, 4, 9504767, 16777215, true, 120, 0, 0, 0, 0, 0, static_cast<DSIIdentifyReadMode>(0), 0, 1, {} },
         },
         {
         },
@@ -144,7 +144,13 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "ST7123", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28928, 65535, false, 0, 0, 2, 960, 3, 2500, {} },
+            { "ST7123", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 4, 28963, 65535, false, 0, 0, 2, 960, 3, 2500, static_cast<DSIIdentifyReadMode>(1), 2, 1, {
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x7F}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x44}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0 },
+        } },
         },
         {
             { "ST7123", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 3, 255 },
@@ -191,7 +197,12 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "ILI9881C", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 0, 39041, 65535, false, 0, 0, 2, 960, 3, 2500, {
+            { "ILI9881C", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 218, 39041, 65535, false, 0, 0, 2, 960, 3, 2500, static_cast<DSIIdentifyReadMode>(2), 2, 1, {
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x7F}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x44}, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0 },
             { PrereqType::DSI_WRITE, -1, 0, 0x00, 0x00, 0xFF, {0x98, 0x81, 0x01}, 0 },
         } },
         },
@@ -238,7 +249,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
         },
         {
-            { "ST7121", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28928, 65535, false, 0, 0, 2, 1300, 3, 2500, {} },
+            { "ST7121", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28928, 65535, false, 0, 0, 2, 1300, 3, 2500, static_cast<DSIIdentifyReadMode>(0), 0, 1, {} },
         },
         {
             { "ST7121", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 1, 255 },

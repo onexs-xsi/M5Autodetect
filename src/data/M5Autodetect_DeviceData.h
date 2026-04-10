@@ -96,6 +96,12 @@ enum class DisplayBusType {
     BUS_DSI = 5,
 };
 
+enum class DSIIdentifyReadMode {
+    AUTO = 0,
+    SINGLE_CMD = 1,
+    SEQUENTIAL_CMD = 2,
+};
+
 struct DisplayConfig {
     const char* driver;
     int bus_type;
@@ -123,6 +129,9 @@ struct DisplayConfig {
     int dsi_lane_mbps;
     int dsi_ldo_chan_id;
     int dsi_ldo_voltage_mv;
+    DSIIdentifyReadMode dsi_identify_read_mode;
+    int dsi_identify_read_len;
+    int dsi_identify_read_stride;
     std::vector<Prerequisite> prerequisites;
 };
 

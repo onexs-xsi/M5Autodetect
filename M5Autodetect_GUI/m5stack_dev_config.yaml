@@ -234,13 +234,38 @@ mcu_categories:
             ldo_voltage_mv: 2500
         probe:
           type: dsi_cmd_match
-          cmd: 244
-          expect: 28928
+          cmd: 4
+          expect: 28963
           mask: 65535
+          read_mode: single_cmd
+          read_len: 2
         identify:
-          cmd: 244
-          expect: 28928
+          cmd: 4
+          expect: 28963
           mask: 65535
+          read_mode: single_cmd
+          read_len: 2
+        prerequisites:
+        - type: i2c_write
+          addr: 67
+          reg: 3
+          data: 127
+        - type: i2c_write
+          addr: 67
+          reg: 7
+          data: 0
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 116
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 68
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 116
         pins: {}
       touch:
       - controller: ST7123
@@ -345,14 +370,38 @@ mcu_categories:
         pins: {}
         probe:
           type: dsi_cmd_match
-          cmd: 0
+          cmd: 218
           expect: 39041
           mask: 65535
+          read_mode: sequential_cmd
+          read_len: 2
         identify:
-          cmd: 0
+          cmd: 218
           expect: 39041
           mask: 65535
+          read_mode: sequential_cmd
+          read_len: 2
         prerequisites:
+        - type: i2c_write
+          addr: 67
+          reg: 3
+          data: 127
+        - type: i2c_write
+          addr: 67
+          reg: 7
+          data: 0
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 116
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 68
+        - type: i2c_write
+          addr: 67
+          reg: 5
+          data: 116
         - type: dsi_write
           cmd: 255
           data:
