@@ -2,6 +2,7 @@
 
 #include <cstdarg>
 #include <cstdio>
+#include <cstring>
 #include <string>
 #include <vector>
 
@@ -115,6 +116,142 @@ void writeEspLog(esp_log_level_t level, const std::string& message) {
         default:
             break;
     }
+}
+
+enum class TouchIdentifyReadPath {
+    RawI2C,
+    PanelIoI2C,
+};
+
+static bool isSt712xTouch(const m5::autodetect::TouchConfig& touch) {
+    return touch.driver != nullptr
+        && (strcmp(touch.driver, "ST7121") == 0 || strcmp(touch.driver, "ST7123") == 0);
+}
+
+static const char* touchIdentifyReadPathName(TouchIdentifyReadPath path) {
+    switch (path) {
+        case TouchIdentifyReadPath::PanelIoI2C:
+            return "panel-io";
+        case TouchIdentifyReadPath::RawI2C:
+        default:
+            return "raw-i2c";
+    }
+}
+
+static bool readTouchIdentifyRegRaw(const m5::autodetect::TouchConfig& touch, uint8_t* reg_value) {
+    if (reg_value == nullptr || touch.addr <= 0 || touch.pin_sda < 0 || touch.pin_scl < 0 || touch.identify_reg < 0) {
+        return false;
+    }
+
+    TwoWire i2c(0);
+    const uint32_t freq = (touch.freq > 0) ? static_cast<uint32_t>(touch.freq) : 400000;
+    if (!i2c.begin(touch.pin_sda, touch.pin_scl, freq)) {
+        return false;
+    }
+
+    i2c.beginTransmission(static_cast<uint8_t>(touch.addr));
+    i2c.write((touch.identify_reg >> 8) & 0xFF);
+    i2c.write(touch.identify_reg & 0xFF);
+    if (i2c.endTransmission(false) != 0) {
+        return false;
+    }
+    if (i2c.requestFrom(touch.addr, 1) != 1) {
+        return false;
+    }
+
+    const int read_value = i2c.read();
+    if (read_value < 0) {
+        return false;
+    }
+
+    *reg_value = static_cast<uint8_t>(read_value);
+    return true;
+}
+
+static bool readTouchIdentifyRegPanelIo(const m5::autodetect::TouchConfig& touch, uint8_t* reg_value) {
+    if (reg_value == nullptr || touch.addr <= 0 || touch.pin_sda < 0 || touch.pin_scl < 0 || touch.identify_reg < 0) {
+        return false;
+    }
+
+    i2c_master_bus_handle_t bus_handle = nullptr;
+    esp_lcd_panel_io_handle_t io_handle = nullptr;
+    bool read_ok = false;
+
+    i2c_master_bus_config_t bus_config = {};
+    bus_config.i2c_port = 0;
+    bus_config.sda_io_num = static_cast<gpio_num_t>(touch.pin_sda);
+    bus_config.scl_io_num = static_cast<gpio_num_t>(touch.pin_scl);
+    bus_config.clk_source = I2C_CLK_SRC_DEFAULT;
+    bus_config.glitch_ignore_cnt = 7;
+    bus_config.intr_priority = 0;
+    bus_config.trans_queue_depth = 0;
+    bus_config.flags.enable_internal_pullup = 1;
+    if (i2c_new_master_bus(&bus_config, &bus_handle) != ESP_OK) {
+        goto cleanup;
+    }
+
+    esp_lcd_panel_io_i2c_config_t io_config = {};
+    io_config.dev_addr = static_cast<uint32_t>(touch.addr);
+    io_config.scl_speed_hz = (touch.freq > 0) ? static_cast<uint32_t>(touch.freq) : 100000;
+    io_config.control_phase_bytes = 1;
+    io_config.lcd_cmd_bits = 16;
+    io_config.flags.disable_control_phase = 1;
+    if (esp_lcd_new_panel_io_i2c(bus_handle, &io_config, &io_handle) != ESP_OK) {
+        goto cleanup;
+    }
+
+    if (esp_lcd_panel_io_rx_param(io_handle, touch.identify_reg, reg_value, 1) != ESP_OK) {
+        goto cleanup;
+    }
+
+    read_ok = true;
+
+cleanup:
+    if (io_handle) {
+        esp_lcd_panel_io_del(io_handle);
+    }
+    if (bus_handle) {
+        i2c_del_master_bus(bus_handle);
+    }
+    return read_ok;
+}
+
+static bool readTouchIdentifyReg(const m5::autodetect::TouchConfig& touch,
+                                 uint8_t* reg_value,
+                                 TouchIdentifyReadPath* read_path) {
+    if (reg_value == nullptr) {
+        return false;
+    }
+
+    if (isSt712xTouch(touch)) {
+        if (readTouchIdentifyRegPanelIo(touch, reg_value)) {
+            if (read_path) {
+                *read_path = TouchIdentifyReadPath::PanelIoI2C;
+            }
+            return true;
+        }
+        if (readTouchIdentifyRegRaw(touch, reg_value)) {
+            if (read_path) {
+                *read_path = TouchIdentifyReadPath::RawI2C;
+            }
+            return true;
+        }
+        return false;
+    }
+
+    if (readTouchIdentifyRegRaw(touch, reg_value)) {
+        if (read_path) {
+            *read_path = TouchIdentifyReadPath::RawI2C;
+        }
+        return true;
+    }
+    if (readTouchIdentifyRegPanelIo(touch, reg_value)) {
+        if (read_path) {
+            *read_path = TouchIdentifyReadPath::PanelIoI2C;
+        }
+        return true;
+    }
+    return false;
 }
 
 // Helper for bit-banging SPI to read display ID
@@ -742,19 +879,17 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
                         // Identify by register value if configured (e.g. fw_version to distinguish ST7121/ST7123)
                         if (touch.identify_reg >= 0) {
-                            i2c.beginTransmission(touch.addr);
-                            i2c.write((touch.identify_reg >> 8) & 0xFF);
-                            i2c.write(touch.identify_reg & 0xFF);
                             bool ident_ok = false;
-                            if (i2c.endTransmission(false) == 0 && i2c.requestFrom((int)touch.addr, 1) == 1) {
-                                uint8_t reg_val = i2c.read();
+                            uint8_t reg_val = 0;
+                            TouchIdentifyReadPath read_path = TouchIdentifyReadPath::RawI2C;
+                            if (readTouchIdentifyReg(touch, &reg_val, &read_path)) {
                                 uint32_t mask = (touch.identify_mask < 0) ? 0xFF : (uint32_t)touch.identify_mask;
                                 uint32_t expect = (uint32_t)touch.identify_expect & mask;
                                 if ((reg_val & mask) == expect) {
                                     ident_ok = true;
-                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Touch ID Reg[0x%04X]=0x%02X\r\n", touch.identify_reg, reg_val);
+                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Touch ID Reg[0x%04X]=0x%02X (%s)\r\n", touch.identify_reg, reg_val, touchIdentifyReadPathName(read_path));
                                 } else {
-                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch ID Reg Mismatch (reg[0x%04X] Got: 0x%02X, Exp: 0x%02X)\r\n", touch.identify_reg, (uint8_t)(reg_val & mask), (uint8_t)expect);
+                                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch ID Reg Mismatch (reg[0x%04X] Got: 0x%02X, Exp: 0x%02X, via %s)\r\n", touch.identify_reg, (uint8_t)(reg_val & mask), (uint8_t)expect, touchIdentifyReadPathName(read_path));
                                 }
                             } else {
                                 if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch ID Reg Read Failed (reg: 0x%04X)\r\n", touch.identify_reg);

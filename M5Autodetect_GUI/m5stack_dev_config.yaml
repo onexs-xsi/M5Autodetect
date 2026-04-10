@@ -235,11 +235,11 @@ mcu_categories:
         probe:
           type: dsi_cmd_match
           cmd: 244
-          expect: 28963
+          expect: 28928
           mask: 65535
         identify:
           cmd: 244
-          expect: 28963
+          expect: 28928
           mask: 65535
         pins: {}
       touch:
@@ -444,11 +444,11 @@ mcu_categories:
         probe:
           type: dsi_cmd_match
           cmd: 244
-          expect: 28963
+          expect: 28928
           mask: 65535
         identify:
           cmd: 244
-          expect: 28963
+          expect: 28928
           mask: 65535
         pins: {}
       touch:
