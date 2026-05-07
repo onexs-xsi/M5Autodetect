@@ -151,6 +151,7 @@ mcu_categories:
     touch: []
     variants:
     - name: ST7121
+      check_pins_count: 9
       check_pins:
         21:
           mode: input
@@ -211,20 +212,24 @@ mcu_categories:
           addr: 67
           reg: 3
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 7
           data: 0
+          delay_ms: 10
       display:
-      - controller: ST7121
-        bus_type: dsi
+      - bus_type: dsi
         width: 720
         height: 1280
         freq: 0
+        controller: ST7121
+        driver: ST7121
         protocol:
           dsi:
             bus_id: 0
@@ -232,31 +237,42 @@ mcu_categories:
             lane_mbps: 1040
             ldo_chan_id: 3
             ldo_voltage_mv: 2500
+        pins: {}
         probe:
           type: dsi_cmd_match
           cmd: 244
           expect: 28963
           mask: 65535
+          read_mode: auto
         identify:
           cmd: 244
           expect: 28963
           mask: 65535
-        pins: {}
+          read_mode: auto
       touch:
-      - controller: ST7121
-        addr: 85
+      - bus_type: i2c
         width: 720
         height: 1280
         freq: 400000
+        controller: ST7121
+        driver: ST7121
         pins:
+          int: 23
           sda: 31
           scl: 32
-          int: 23
+        addr: 85
+        probe:
+          type: i2c_reg_match
+          addr: 85
+          reg: 0
+          expect: 1
+          mask: 65535
         identify:
           reg: 0
           expect: 1
-          mask: 255
+          mask: 65535
     - name: ST7123
+      check_pins_count: 9
       check_pins:
         21:
           mode: input
@@ -317,20 +333,24 @@ mcu_categories:
           addr: 67
           reg: 3
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 7
           data: 0
+          delay_ms: 10
       display:
-      - controller: ST7123
-        bus_type: dsi
+      - bus_type: dsi
         width: 720
         height: 1280
         freq: 0
+        controller: ST7123
+        driver: ST7123
         protocol:
           dsi:
             bus_id: 0
@@ -338,15 +358,18 @@ mcu_categories:
             lane_mbps: 1040
             ldo_chan_id: 3
             ldo_voltage_mv: 2500
+        pins: {}
         probe:
           type: dsi_cmd_match
           cmd: 244
           expect: 28963
           mask: 65535
+          read_mode: auto
         identify:
           cmd: 244
           expect: 28963
           mask: 65535
+          read_mode: auto
         prerequisites:
         - type: i2c_write
           addr: 67
@@ -373,21 +396,28 @@ mcu_categories:
           reg: 5
           data: 116
           delay_ms: 100
-        pins: {}
       touch:
-      - controller: ST7123
-        addr: 85
+      - bus_type: i2c
         width: 720
         height: 1280
         freq: 400000
+        controller: ST7123
+        driver: ST7123
         pins:
+          int: 23
           sda: 31
           scl: 32
-          int: 23
+        addr: 85
+        probe:
+          type: i2c_reg_match
+          addr: 85
+          reg: 0
+          expect: 3
+          mask: 65535
         identify:
           reg: 0
           expect: 3
-          mask: 255
+          mask: 65535
     - name: IlI9881c
       check_pins:
         21:

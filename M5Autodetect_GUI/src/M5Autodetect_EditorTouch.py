@@ -303,9 +303,9 @@ class TouchEditorManager:
             probe['addr'] = probe_addr
             if t_data['bus_type'] == 'i2c':
                 t_data['addr'] = probe_addr
-        if probe_cmd is not None:
+        if probe_type == 'spi_cmd_match' and probe_cmd is not None:
             probe['cmd'] = probe_cmd
-        if probe_reg is not None:
+        if probe_type == 'i2c_reg_match' and probe_reg is not None:
             probe['reg'] = probe_reg
         if probe_expect is not None:
             probe['expect'] = probe_expect
@@ -317,6 +317,24 @@ class TouchEditorManager:
             probe['rst_wait'] = editor['probe_wait'].value()
         if probe_type != 'none' or len(probe) > 1:
             t_data['probe'] = probe
+
+        legacy_identify = {}
+        if probe_type == 'i2c_reg_match':
+            if probe_reg is not None:
+                legacy_identify['reg'] = probe_reg
+            if probe_expect is not None:
+                legacy_identify['expect'] = probe_expect
+            if probe_mask is not None:
+                legacy_identify['mask'] = probe_mask
+        elif probe_type == 'spi_cmd_match':
+            if probe_cmd is not None:
+                legacy_identify['cmd'] = probe_cmd
+            if probe_expect is not None:
+                legacy_identify['expect'] = probe_expect
+            if probe_mask is not None:
+                legacy_identify['mask'] = probe_mask
+        if legacy_identify:
+            t_data['identify'] = legacy_identify
 
         prereq_list = []
         for pre in editor.get('prereq_entries', []):

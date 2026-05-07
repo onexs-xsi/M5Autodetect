@@ -402,6 +402,113 @@ static uint32_t readDisplayID(const m5::autodetect::DisplayConfig& disp) {
     return result;
 }
 
+struct I2CIdentifyReadResult {
+    bool ok = false;
+    uint32_t value = 0;
+    uint8_t data[4] = {};
+    int len = 0;
+};
+
+static I2CIdentifyReadResult readDisplayID_I2C(const m5::autodetect::DisplayConfig& disp) {
+    I2CIdentifyReadResult result = {};
+    const int sda = disp.pin_mosi;
+    const int scl = disp.pin_miso;
+    if (disp.i2c_addr == 0 || sda < 0 || scl < 0) {
+        return result;
+    }
+
+    TwoWire i2c(0);
+    const uint32_t freq = (disp.freq > 0) ? static_cast<uint32_t>(disp.freq) : 400000;
+    if (!i2c.begin(sda, scl, freq)) {
+        return result;
+    }
+
+    i2c.beginTransmission(disp.i2c_addr);
+    if (disp.identify_cmd < 0) {
+        result.ok = (i2c.endTransmission() == 0);
+        return result;
+    }
+
+    if (disp.identify_cmd > 0xFF) {
+        i2c.write((disp.identify_cmd >> 8) & 0xFF);
+    }
+    i2c.write(disp.identify_cmd & 0xFF);
+    if (i2c.endTransmission(false) != 0) {
+        return result;
+    }
+
+    const int read_len = getIdentifyReadLen(disp.identify_mask, 0, 1);
+    if (read_len <= 0 || read_len > static_cast<int>(sizeof(result.data))) {
+        return result;
+    }
+    if (i2c.requestFrom(static_cast<int>(disp.i2c_addr), read_len) != read_len) {
+        return result;
+    }
+    for (int i = 0; i < read_len; ++i) {
+        const int read_value = i2c.read();
+        if (read_value < 0) {
+            return {};
+        }
+        result.data[i] = static_cast<uint8_t>(read_value);
+    }
+
+    result.len = read_len;
+    result.value = packBytesBE(result.data, read_len);
+    result.ok = true;
+    return result;
+}
+
+static bool readTouchIdentifyRegSpi(const m5::autodetect::TouchConfig& touch, uint8_t* reg_value) {
+    if (reg_value == nullptr || touch.identify_reg < 0 || touch.pin_mosi < 0 || touch.pin_sclk < 0 || touch.pin_cs < 0) {
+        return false;
+    }
+
+    const int mosi = touch.pin_mosi;
+    const int miso = touch.pin_miso;
+    const int sclk = touch.pin_sclk;
+    const int cs = touch.pin_cs;
+
+    pinMode(cs, OUTPUT);
+    digitalWrite(cs, HIGH);
+    pinMode(sclk, OUTPUT);
+    digitalWrite(sclk, LOW);
+    pinMode(mosi, OUTPUT);
+    if (miso >= 0) {
+        pinMode(miso, INPUT);
+    }
+
+    digitalWrite(cs, LOW);
+
+    uint8_t cmd = static_cast<uint8_t>(touch.identify_reg);
+    for (int i = 0; i < 8; ++i) {
+        digitalWrite(mosi, (cmd & 0x80) ? HIGH : LOW);
+        digitalWrite(sclk, HIGH);
+        digitalWrite(sclk, LOW);
+        cmd <<= 1;
+    }
+
+    const int read_pin = (miso >= 0) ? miso : mosi;
+    pinMode(read_pin, INPUT);
+
+    uint8_t value = 0;
+    for (int i = 0; i < 8; ++i) {
+        value <<= 1;
+        digitalWrite(sclk, HIGH);
+        if (digitalRead(read_pin)) {
+            value |= 1;
+        }
+        digitalWrite(sclk, LOW);
+    }
+
+    digitalWrite(cs, HIGH);
+    if (read_pin == mosi) {
+        pinMode(mosi, OUTPUT);
+    }
+
+    *reg_value = value;
+    return true;
+}
+
 
 
 #if M5_AUTODETECT_DSI_SUPPORTED
@@ -512,6 +619,13 @@ static DsiIdentifyReadResult readDisplayID_DSI(const m5::autodetect::DisplayConf
     for (const auto& p : disp.prerequisites) {
         if (p.type == m5::autodetect::PrereqType::DSI_WRITE) {
             esp_lcd_panel_io_tx_param(io_dbi, p.cmd, p.data.data(), p.data.size());
+            if (p.delay_ms > 0) delay(p.delay_ms);
+        } else if (p.type == m5::autodetect::PrereqType::DSI_READ) {
+            uint8_t discard[8] = {};
+            const int read_len = (p.len > 0 && p.len <= static_cast<int>(sizeof(discard))) ? p.len : 1;
+            if (esp_lcd_panel_io_rx_param(io_dbi, p.cmd, discard, read_len) != ESP_OK) {
+                goto cleanup;
+            }
             if (p.delay_ms > 0) delay(p.delay_ms);
         }
     }
@@ -678,8 +792,7 @@ static void runPrerequisites(const std::vector<m5::autodetect::Prerequisite>& pr
             }
         }
         else if (p.type == m5::autodetect::PrereqType::DSI_WRITE || p.type == m5::autodetect::PrereqType::DSI_READ) {
-            // DSI bus prerequisites are recorded for documentation / future use;
-            // M5Autodetect does not initialise a DSI bus at detection time.
+            // DSI prerequisites need a DBI IO handle and are executed by readDisplayID_DSI().
         }
     }
 }
@@ -898,6 +1011,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
         // 4. Additional Tests
         if (!step_failed) {
+            bool additional_tests_passed = true;
             for (const auto& test : device.additional_tests) {
                 bool pass = false;
                 switch (test.type) {
@@ -987,8 +1101,13 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Additional Test %d (+%d)\r\n", test.type, test.score);
                 } else {
                     if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Additional Test %d\r\n", test.type);
+                    additional_tests_passed = false;
                     break;  // Stop on first failed additional test
                 }
+            }
+
+            if (!additional_tests_passed) {
+                step_failed = true;
             }
             
             // If no additional tests and all previous steps passed, give bonus point
@@ -1018,6 +1137,65 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                             if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] Screen ID Match (+1) (0x%06X)\r\n", id);
                         } else {
                             if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Screen ID Mismatch (Got: 0x%06X, Exp: 0x%06X)\r\n", id & mask, expect);
+                        }
+                    }
+                }
+                else if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_I2C)) {
+                    runPrerequisites(disp.prerequisites, disp.pin_mosi, disp.pin_miso, -1, -1, -1, -1, disp.freq);
+                    if (disp.i2c_addr > 0 && disp.pin_mosi >= 0 && disp.pin_miso >= 0) {
+                        const I2CIdentifyReadResult read_result = readDisplayID_I2C(disp);
+                        if (!read_result.ok) {
+                            screen_checked = true;
+                            if (_debug >= debug_debug) {
+                                if (disp.identify_cmd < 0) {
+                                    LOG_PRINTF(debug_debug,
+                                               "  [Fail] I2C Screen ACK failed (addr: 0x%02X)\r\n",
+                                               disp.i2c_addr);
+                                } else {
+                                    LOG_PRINTF(debug_debug,
+                                               "  [Fail] I2C Screen probe failed (addr: 0x%02X, reg: 0x%02X)\r\n",
+                                               disp.i2c_addr, disp.identify_cmd & 0xFF);
+                                }
+                            }
+                        } else if (disp.identify_cmd < 0) {
+                            screen_checked = true;
+                            screen_matched = true;
+                            current_score++;
+                            if (_debug >= debug_debug) {
+                                LOG_PRINTF(debug_debug,
+                                           "  [Pass] I2C Screen ACK Match (+1) (addr: 0x%02X)\r\n",
+                                           disp.i2c_addr);
+                            }
+                        } else if (disp.identify_expect < 0) {
+                            screen_probe_skipped = true;
+                            current_score++;
+                            skip_count++;
+                            if (_debug >= debug_debug) {
+                                const std::string raw_bytes = formatHexBytes(read_result.data, read_result.len);
+                                LOG_PRINTF(debug_debug,
+                                           "  [Info] I2C Screen ID raw read (%d bytes): %s (0x%0*X)\r\n",
+                                           read_result.len, raw_bytes.c_str(),
+                                           read_result.len * 2, read_result.value);
+                                LOG_PRINTF(debug_debug,
+                                           "  [Skip] I2C Screen ID telemetry-only (+1)\r\n");
+                            }
+                        } else {
+                            screen_checked = true;
+                            const uint32_t mask = (disp.identify_mask == -1) ? 0xFFFFFFFF : static_cast<uint32_t>(disp.identify_mask);
+                            if ((read_result.value & mask) == static_cast<uint32_t>(disp.identify_expect)) {
+                                screen_matched = true;
+                                current_score++;
+                                if (_debug >= debug_debug) {
+                                    LOG_PRINTF(debug_debug,
+                                               "  [Pass] I2C Screen ID Match (+1) (0x%0*X)\r\n",
+                                               read_result.len * 2, read_result.value);
+                                }
+                            } else if (_debug >= debug_debug) {
+                                LOG_PRINTF(debug_debug,
+                                           "  [Fail] I2C Screen ID Mismatch (Got: 0x%0*X, Exp: 0x%0*X)\r\n",
+                                           read_result.len * 2, read_result.value & mask,
+                                           read_result.len * 2, static_cast<uint32_t>(disp.identify_expect));
+                            }
                         }
                     }
                 }
@@ -1087,14 +1265,18 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             }
         }
 
-        // 6. Touch Detection (I2C based touch panels)
+        // 6. Touch Detection (I2C ACK/register or SPI command based touch panels)
         if (!step_failed) {
             bool touch_checked = false;
             bool touch_matched = false;
             
             for (const auto& touch : device.touches) {
-                runPrerequisites(touch.prerequisites, touch.pin_sda, touch.pin_scl, -1, -1, -1, -1, touch.freq);
-                if (touch.addr > 0 && touch.pin_sda >= 0 && touch.pin_scl >= 0) {
+                runPrerequisites(touch.prerequisites, touch.pin_sda, touch.pin_scl,
+                                 touch.pin_mosi, touch.pin_miso, touch.pin_sclk, touch.pin_cs,
+                                 touch.freq);
+
+                if (touch.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_I2C)
+                    && touch.addr > 0 && touch.pin_sda >= 0 && touch.pin_scl >= 0) {
                     touch_checked = true;
                     
                     TwoWire i2c(0);  // Use I2C port 0 for touch
@@ -1134,6 +1316,38 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                         if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] Touch I2C Failed (addr: 0x%02X)\r\n", touch.addr);
                     }
                     break;  // Only check first touch config
+                }
+
+                if (touch.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_SPI)
+                    && touch.pin_mosi >= 0 && touch.pin_sclk >= 0 && touch.pin_cs >= 0
+                    && touch.identify_reg >= 0) {
+                    touch_checked = true;
+
+                    uint8_t reg_val = 0;
+                    if (readTouchIdentifyRegSpi(touch, &reg_val)) {
+                        uint32_t mask = (touch.identify_mask < 0) ? 0xFF : static_cast<uint32_t>(touch.identify_mask);
+                        uint32_t expect = static_cast<uint32_t>(touch.identify_expect) & mask;
+                        if ((reg_val & mask) == expect) {
+                            touch_matched = true;
+                            current_score++;
+                            if (_debug >= debug_debug) {
+                                LOG_PRINTF(debug_debug,
+                                           "  [Pass] Touch SPI ID Match (+1) (cmd: 0x%02X, val: 0x%02X)\r\n",
+                                           touch.identify_reg & 0xFF, reg_val);
+                            }
+                        } else if (_debug >= debug_debug) {
+                            LOG_PRINTF(debug_debug,
+                                       "  [Fail] Touch SPI ID Mismatch (cmd[0x%02X] Got: 0x%02X, Exp: 0x%02X)\r\n",
+                                       touch.identify_reg & 0xFF,
+                                       static_cast<uint8_t>(reg_val & mask),
+                                       static_cast<uint8_t>(expect));
+                        }
+                    } else if (_debug >= debug_debug) {
+                        LOG_PRINTF(debug_debug,
+                                   "  [Fail] Touch SPI ID Read Failed (cmd: 0x%02X)\r\n",
+                                   touch.identify_reg & 0xFF);
+                    }
+                    break;
                 }
             }
             

@@ -112,7 +112,7 @@ const std::vector<DeviceInfo> devices_data = {
         "ESP32-P4",
         board_M5Tab5_ST7121,
         true,
-        11,
+        9,
         {
             { 21, 0, 1 },
             { 23, 0, 1 },
@@ -136,9 +136,9 @@ const std::vector<DeviceInfo> devices_data = {
                 { 0x44, true },
                 { 0x68, true },
             }, {
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
         } },
         },
         {
@@ -147,7 +147,7 @@ const std::vector<DeviceInfo> devices_data = {
             { "ST7121", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 244, 28963, 65535, false, 0, 0, 2, 1040, 3, 2500, static_cast<DSIIdentifyReadMode>(0), 0, 1, {} },
         },
         {
-            { "ST7121", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 1, 255 },
+            { "ST7121", 1, 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, -1, -1, -1, -1, {}, 0, 1, 65535 },
         },
         {
         }
@@ -158,7 +158,7 @@ const std::vector<DeviceInfo> devices_data = {
         "ESP32-P4",
         board_M5Tab5_ST7123,
         true,
-        11,
+        9,
         {
             { 21, 0, 1 },
             { 23, 0, 1 },
@@ -182,9 +182,9 @@ const std::vector<DeviceInfo> devices_data = {
                 { 0x44, true },
                 { 0x68, true },
             }, {
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
         } },
         },
         {
@@ -199,7 +199,7 @@ const std::vector<DeviceInfo> devices_data = {
         } },
         },
         {
-            { "ST7123", 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, {}, 0, 3, 255 },
+            { "ST7123", 1, 0x55, 720, 1280, 400000, 31, 32, 23, -1, nullptr, -1, -1, -1, -1, {}, 0, 3, 65535 },
         },
         {
         }

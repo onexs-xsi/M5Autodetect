@@ -82,6 +82,20 @@ class M5HeaderGenerator:
         return M5HeaderGenerator.DSI_IDENTIFY_MODE_MAP.get(val, 0)
 
     @staticmethod
+    def _get_identify_config(item, supported_probe_types):
+        """Return legacy identify fields, falling back to matching probe data."""
+        identify = item.get("identify") or {}
+        probe = item.get("probe") or {}
+
+        if isinstance(probe, dict) and probe.get("type") in supported_probe_types:
+            merged = dict(probe)
+            if isinstance(identify, dict):
+                merged.update(identify)
+            return merged
+
+        return identify if isinstance(identify, dict) else {}
+
+    @staticmethod
     def _get_prereq_type(val):
         """Convert prereq type to enum string"""
         val = str(val).lower()
@@ -271,8 +285,8 @@ class M5HeaderGenerator:
         content.append("    int width;")
         content.append("    int height;")
         content.append("    int freq;")
-        content.append("    int pin_mosi;  // or d0 for parallel")
-        content.append("    int pin_miso;  // or d1 for parallel")
+        content.append("    int pin_mosi;  // or sda for I2C, d0 for parallel")
+        content.append("    int pin_miso;  // or scl for I2C, d1 for parallel")
         content.append("    int pin_sclk;  // or wr for parallel")
         content.append("    int pin_cs;")
         content.append("    int pin_dc;    // or rs for parallel")
@@ -303,6 +317,7 @@ class M5HeaderGenerator:
 
         content.append("struct TouchConfig {")
         content.append("    const char* driver;")
+        content.append("    int bus_type;")
         content.append("    int addr;")
         content.append("    int width;")
         content.append("    int height;")
@@ -312,8 +327,12 @@ class M5HeaderGenerator:
         content.append("    int pin_int;")
         content.append("    int pin_rst;")
         content.append("    const char* pin_rst_str;")
+        content.append("    int pin_mosi;")
+        content.append("    int pin_miso;")
+        content.append("    int pin_sclk;")
+        content.append("    int pin_cs;")
         content.append("    std::vector<Prerequisite> prerequisites;")
-        content.append("    int identify_reg;")
+        content.append("    int identify_reg;  // I2C register or SPI command")
         content.append("    int identify_expect;")
         content.append("    int identify_mask;")
         content.append("};")
@@ -611,7 +630,10 @@ class M5HeaderGenerator:
                         height = disp.get("height", 0)
                         freq = disp.get("freq", 0)
                         d_pins = disp.get("pins", {})
-                        i2c_addr = M5HeaderGenerator._parse_int(disp.get("addr", 0))
+                        probe = disp.get("probe") or {}
+                        i2c_addr = M5HeaderGenerator._parse_int(
+                            disp.get("addr", probe.get("addr", 0))
+                        )
 
                         def get_pin_val(p_name):
                             val = d_pins.get(p_name, -1)
@@ -625,8 +647,16 @@ class M5HeaderGenerator:
                                 return f'"{val}"'
                             return "nullptr"
 
-                        identify = disp.get("identify", {})
-                        id_cmd = M5HeaderGenerator._parse_int(identify.get("cmd", -1))
+                        identify = M5HeaderGenerator._get_identify_config(
+                            disp, {"spi_cmd_match", "dsi_cmd_match", "i2c_reg_match"}
+                        )
+                        if bus_type == M5HeaderGenerator.BUS_TYPE_MAP["i2c"]:
+                            id_cmd_value = identify.get("reg", identify.get("cmd", -1))
+                        else:
+                            id_cmd_value = identify.get("cmd", identify.get("reg", -1))
+                        id_cmd = M5HeaderGenerator._parse_int(
+                            id_cmd_value
+                        )
                         id_expect = M5HeaderGenerator._parse_int(
                             identify.get("expect", -1)
                         )
@@ -668,10 +698,27 @@ class M5HeaderGenerator:
                         prereqs = disp.get("prerequisites", [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
+                        pin_mosi = get_pin_val("mosi")
+                        pin_miso = get_pin_val("miso")
+                        pin_sclk = get_pin_val("sclk")
+                        pin_cs = get_pin_val("cs")
+                        pin_dc = get_pin_val("dc")
+                        if bus_type == M5HeaderGenerator.BUS_TYPE_MAP["i2c"]:
+                            pin_mosi = get_pin_val("sda")
+                            pin_miso = get_pin_val("scl")
+                        elif bus_type in (
+                            M5HeaderGenerator.BUS_TYPE_MAP["parallel8"],
+                            M5HeaderGenerator.BUS_TYPE_MAP["parallel16"],
+                        ):
+                            pin_mosi = get_pin_val("d0")
+                            pin_miso = get_pin_val("d1")
+                            pin_sclk = get_pin_val("wr")
+                            pin_dc = get_pin_val("rs")
+
                         content.append(
                             f'            {{ "{controller}", {bus_type}, {width}, {height}, {freq}, '
-                            f"{get_pin_val('mosi')}, {get_pin_val('miso')}, {get_pin_val('sclk')}, "
-                            f"{get_pin_val('cs')}, {get_pin_val('dc')}, {get_pin_val('rst')}, {get_pin_val('bl')}, "
+                            f"{pin_mosi}, {pin_miso}, {pin_sclk}, "
+                            f"{pin_cs}, {pin_dc}, {get_pin_val('rst')}, {get_pin_val('bl')}, "
                             f"0x{i2c_addr:02X}, "
                             f"{get_pin_str('rst')}, {get_pin_str('bl')}, "
                             f"{id_cmd}, {id_expect}, {id_mask}, {id_rst_before}, {id_rst_wait}, "
@@ -685,6 +732,9 @@ class M5HeaderGenerator:
                     content.append("        {")
                     for touch in touches:
                         controller = touch.get("controller", touch.get("driver", ""))
+                        bus_type = M5HeaderGenerator._get_bus_type(
+                            touch.get("bus_type", "i2c")
+                        )
                         addr = M5HeaderGenerator._parse_int(touch.get("addr", 0))
                         width = touch.get("width", 0)
                         height = touch.get("height", 0)
@@ -706,9 +756,17 @@ class M5HeaderGenerator:
                         prereqs = touch.get("prerequisites", [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
-                        identify_t = touch.get("identify", {})
+                        identify_t = M5HeaderGenerator._get_identify_config(
+                            touch, {"i2c_reg_match", "spi_cmd_match"}
+                        )
+                        if bus_type == M5HeaderGenerator.BUS_TYPE_MAP["spi"]:
+                            touch_id_value = identify_t.get("cmd", identify_t.get("reg", -1))
+                        else:
+                            touch_id_value = identify_t.get("reg", identify_t.get("cmd", -1))
                         id_reg = (
-                            M5HeaderGenerator._parse_int(identify_t.get("reg", -1))
+                            M5HeaderGenerator._parse_int(
+                                touch_id_value
+                            )
                             if identify_t
                             else -1
                         )
@@ -724,9 +782,11 @@ class M5HeaderGenerator:
                         )
 
                         content.append(
-                            f'            {{ "{controller}", 0x{addr:02X}, {width}, {height}, {freq}, '
+                            f'            {{ "{controller}", {bus_type}, 0x{addr:02X}, {width}, {height}, {freq}, '
                             f"{get_pin_val('sda')}, {get_pin_val('scl')}, {get_pin_val('int')}, {get_pin_val('rst')}, "
-                            f"{get_pin_str('rst')}, {prereq_str}, {id_reg}, {id_expect}, {id_mask} }},"
+                            f"{get_pin_str('rst')}, "
+                            f"{get_pin_val('mosi')}, {get_pin_val('miso')}, {get_pin_val('sclk')}, {get_pin_val('cs')}, "
+                            f"{prereq_str}, {id_reg}, {id_expect}, {id_mask} }},"
                         )
                     content.append("        },")
 

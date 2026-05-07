@@ -176,16 +176,16 @@ def build_probe_hint(tr, target, probe_type):
     hints = {
         "display:spi_cmd_match": tr("当前运行时已支持 SPI 屏幕读 ID。"),
         "display:i2c_addr_ack": tr(
-            "仅保存 I2C 地址确认信息，当前运行时未直接用于显示屏判定。"
+            "当前运行时会用 I2C 地址 ACK 判定显示屏。"
         ),
-        "display:i2c_reg_match": tr("保存 I2C 寄存器匹配条件，适合后续扩展。"),
+        "display:i2c_reg_match": tr("当前运行时会读取显示屏 I2C 寄存器并按期望值/掩码匹配。"),
         "display:dsi_cmd_match": tr(
-            "适合 Tab5 这类 DSI 屏，当前运行时尚未接入 DSI 探测。"
+            "当前运行时已支持 DSI DCS 读 ID。"
         ),
         "display:none": tr("只记录屏幕硬件参数，不参与自动探测。"),
         "touch:i2c_addr_ack": tr("当前运行时仅支持触摸 I2C 地址 ACK 探测。"),
-        "touch:i2c_reg_match": tr("保存触摸寄存器匹配条件，当前运行时尚未使用。"),
-        "touch:spi_cmd_match": tr("保存 SPI 触摸识别条件，当前运行时尚未使用。"),
+        "touch:i2c_reg_match": tr("当前运行时会读取触摸寄存器并按期望值/掩码匹配。"),
+        "touch:spi_cmd_match": tr("当前运行时会读取 SPI 触摸命令并按期望值/掩码匹配。"),
         "touch:none": tr("只记录触摸硬件参数，不参与自动探测。"),
     }
     return hints.get(f"{target}:{probe_type}", tr("当前协议暂无专用识别逻辑。"))
@@ -220,6 +220,14 @@ def infer_display_probe(display_data, bus_type):
             "read_len": identify.get("read_len", 0),
             "read_stride": identify.get("read_stride", 1),
         }
+    if bus_type == "i2c" and identify:
+        return {
+            "type": "i2c_reg_match",
+            "addr": display_data.get("addr"),
+            "reg": identify.get("reg", identify.get("cmd")),
+            "expect": identify.get("expect"),
+            "mask": identify.get("mask"),
+        }
     if bus_type == "i2c":
         addr = display_data.get("addr")
         if addr is not None:
@@ -233,6 +241,22 @@ def infer_touch_probe(touch_data, bus_type):
     if probe:
         probe.setdefault("type", "none")
         return probe
+    identify = touch_data.get("identify") or {}
+    if bus_type == "i2c" and identify:
+        return {
+            "type": "i2c_reg_match",
+            "addr": touch_data.get("addr"),
+            "reg": identify.get("reg", identify.get("cmd")),
+            "expect": identify.get("expect"),
+            "mask": identify.get("mask"),
+        }
+    if bus_type == "spi" and identify:
+        return {
+            "type": "spi_cmd_match",
+            "cmd": identify.get("cmd", identify.get("reg")),
+            "expect": identify.get("expect"),
+            "mask": identify.get("mask"),
+        }
     if bus_type == "i2c":
         addr = touch_data.get("addr")
         if addr is not None:

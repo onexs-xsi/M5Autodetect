@@ -109,8 +109,8 @@ struct DisplayConfig {
     int width;
     int height;
     int freq;
-    int pin_mosi;  // or d0 for parallel
-    int pin_miso;  // or d1 for parallel
+    int pin_mosi;  // or sda for I2C, d0 for parallel
+    int pin_miso;  // or scl for I2C, d1 for parallel
     int pin_sclk;  // or wr for parallel
     int pin_cs;
     int pin_dc;    // or rs for parallel
@@ -138,6 +138,7 @@ struct DisplayConfig {
 
 struct TouchConfig {
     const char* driver;
+    int bus_type;
     int addr;
     int width;
     int height;
@@ -147,8 +148,12 @@ struct TouchConfig {
     int pin_int;
     int pin_rst;
     const char* pin_rst_str;
+    int pin_mosi;
+    int pin_miso;
+    int pin_sclk;
+    int pin_cs;
     std::vector<Prerequisite> prerequisites;
-    int identify_reg;
+    int identify_reg;  // I2C register or SPI command
     int identify_expect;
     int identify_mask;
 };

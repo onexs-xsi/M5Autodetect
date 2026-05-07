@@ -479,9 +479,9 @@ class DisplayEditorManager:
 
         if probe_addr is not None:
             probe["addr"] = probe_addr
-        if probe_cmd is not None:
+        if probe_type in ("spi_cmd_match", "dsi_cmd_match") and probe_cmd is not None:
             probe["cmd"] = probe_cmd
-        if probe_reg is not None:
+        if probe_type == "i2c_reg_match" and probe_reg is not None:
             probe["reg"] = probe_reg
         if probe_expect is not None:
             probe["expect"] = probe_expect
@@ -501,9 +501,11 @@ class DisplayEditorManager:
             d_data["probe"] = probe
 
         legacy_identify = {}
-        if probe_type in ("spi_cmd_match", "dsi_cmd_match"):
-            if probe_cmd is not None:
+        if probe_type in ("spi_cmd_match", "dsi_cmd_match", "i2c_reg_match"):
+            if probe_type in ("spi_cmd_match", "dsi_cmd_match") and probe_cmd is not None:
                 legacy_identify["cmd"] = probe_cmd
+            if probe_type == "i2c_reg_match" and probe_reg is not None:
+                legacy_identify["reg"] = probe_reg
             if probe_expect is not None:
                 legacy_identify["expect"] = probe_expect
             if probe_mask is not None:
