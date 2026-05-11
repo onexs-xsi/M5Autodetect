@@ -382,6 +382,15 @@ class I2CPinEditorManager:
         layout.addRow(cb_internal_pullup)
         register_change_highlight(cb_internal_pullup, cb_internal_pullup.stateChanged, cb_internal_pullup.isChecked, internal_pullup_val)
 
+        cb_low_level_hard_fail = QCheckBox(tr("SDA/SCL 低电平硬失败"))
+        low_level_hard_fail_val = bool(i2c_data.get('low_level_hard_fail', True))
+        cb_low_level_hard_fail.setChecked(low_level_hard_fail_val)
+        cb_low_level_hard_fail.setToolTip(
+            tr("勾选：SDA/SCL 空闲电平为低时立即判定该板型失败。\n"
+               "取消：记录低电平并跳过该 I2C 总线失败，不直接淘汰板型。"))
+        layout.addRow(cb_low_level_hard_fail)
+        register_change_highlight(cb_low_level_hard_fail, cb_low_level_hard_fail.stateChanged, cb_low_level_hard_fail.isChecked, low_level_hard_fail_val)
+
         sb_detect_count = NoScrollSpinBox()
         sb_detect_count.setRange(-1, 999)
         sb_detect_count.setSpecialValueText(tr("全部"))
@@ -438,6 +447,7 @@ class I2CPinEditorManager:
             'scl': sb_scl,
             'freq': sb_freq,
             'internal_pullup': cb_internal_pullup,
+            'low_level_hard_fail': cb_low_level_hard_fail,
             'detect_count': sb_detect_count,
             'table_detect': table_detect,
             'prereq_entries': prereq_entries,

@@ -940,6 +940,8 @@ class M5BuilderGUI(QMainWindow):
                     bus_data['detect_count'] = editor['detect_count'].value()
                 if editor['internal_pullup'].isChecked():
                     bus_data['internal_pullup'] = True
+                if not editor['low_level_hard_fail'].isChecked():
+                    bus_data['low_level_hard_fail'] = False
                 
                 # Prerequisites
                 prereq_list = []
@@ -1460,6 +1462,8 @@ class M5BuilderGUI(QMainWindow):
                     bus_data['detect_count'] = detect_count
                 if internal_pullup:
                     bus_data['internal_pullup'] = True
+                if 'low_level_hard_fail' in editor and not editor['low_level_hard_fail'].isChecked():
+                    bus_data['low_level_hard_fail'] = False
                 
                 new_i2c_list.append(bus_data)
             except ValueError as e:

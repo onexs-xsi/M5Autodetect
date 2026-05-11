@@ -1,6 +1,11 @@
 {
   "language": "en_US",
   "strings": {
+    "SDA/SCL 低电平硬失败": "Hard fail on SDA/SCL low",
+    "勾选：SDA/SCL 空闲电平为低时立即判定该板型失败。\n取消：记录低电平并跳过该 I2C 总线失败，不直接淘汰板型。": "Checked: fail this board immediately when SDA/SCL idle level is low.\nUnchecked: record the low level and skip this I2C bus failure without discarding the board directly.",
+    "内部 I2C Port{port} 低电平硬失败: {old} -> {new}": "Internal I2C Port{port} low-level hard fail: {old} -> {new}",
+    "是": "Yes",
+    "否": "No",
     "使用内部上拉 (无外部上拉时启用)": "Use Internal Pullup (Enable if no external pullup)",
     "当 I2C 总线没有外部上拉电阻时，启用 ESP32 内部上拉电阻。\n注意：内部上拉较弱，仅适用于短距离低速通信。": "Enable ESP32 internal pullup when I2C bus has no external pullup resistors.\nNote: Internal pullup is weak, suitable only for short-distance low-speed communication.",
     "已加载: {path}": "Loaded: {path}",

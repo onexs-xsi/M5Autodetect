@@ -19,7 +19,7 @@ const std::vector<DeviceInfo> devices_data = {
             { 0, 45, 0, 400000, 2, false, {
                 { 0x68, true },
                 { 0x30, true },
-            }, {} },
+            }, {}, true },
         },
         {
         },
@@ -45,7 +45,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
             { 0, 45, 0, 400000, 1, false, {
                 { 0x18, true },
-            }, {} },
+            }, {}, true },
         },
         {
         },
@@ -70,7 +70,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
             { 0, 38, 39, 400000, 1, false, {
                 { 0x68, true },
-            }, {} },
+            }, {}, true },
         },
         {
         },
@@ -95,7 +95,7 @@ const std::vector<DeviceInfo> devices_data = {
         },
         {
             { 0, 38, 39, 400000, 0, false, {
-            }, {} },
+            }, {}, true },
         },
         {
         },
@@ -139,7 +139,7 @@ const std::vector<DeviceInfo> devices_data = {
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 10 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 10 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
-        } },
+        }, false },
         },
         {
         },
@@ -185,7 +185,7 @@ const std::vector<DeviceInfo> devices_data = {
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 10 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 10 },
             { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
-        } },
+        }, false },
         },
         {
         },
@@ -234,22 +234,22 @@ const std::vector<DeviceInfo> devices_data = {
                 { 0x68, true },
                 { 0x14, false },
             }, {
-            { PrereqType::GPIO_WRITE, 23, 1, 0x00, 0x00, 0x00, {0x00}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 0 },
-        } },
+            { PrereqType::GPIO_WRITE, 23, 1, 0x00, 0x00, 0x00, {0x00}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x30}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
+        }, false },
         },
         {
         },
         {
             { "ILI9881C", 5, 720, 1280, 0, -1, -1, -1, -1, -1, -1, -1, 0x00, nullptr, nullptr, 0, 39041, 65535, false, 0, 0, 2, 730, 3, 2500, static_cast<DSIIdentifyReadMode>(2), 2, 1, {
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x7F}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x44}, 0, 0 },
-            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0, 0 },
-            { PrereqType::DSI_WRITE, -1, 0, 0x00, 0x00, 0xFF, {0x98, 0x81, 0x01}, 0, 0 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x03, 0x00, {0x7F}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x07, 0x00, {0x00}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x44}, 0, 10 },
+            { PrereqType::I2C_WRITE, -1, 0, 0x43, 0x05, 0x00, {0x74}, 0, 10 },
+            { PrereqType::DSI_WRITE, -1, 0, 0x00, 0x00, 0xFF, {0x98, 0x81, 0x01}, 0, 5 },
         } },
         },
         {
@@ -292,7 +292,7 @@ const std::vector<DeviceInfo> devices_data = {
         {
             { 0, 25, 21, 400000, 1, false, {
                 { 0x68, true },
-            }, {} },
+            }, {}, true },
         },
         {
         },

@@ -207,6 +207,7 @@ mcu_categories:
         - name: Unknown_0x68
           addr: 104
         detect_count: 7
+        low_level_hard_fail: false
         prerequisites:
         - type: i2c_write
           addr: 67
@@ -328,6 +329,7 @@ mcu_categories:
         - name: Unknown_0x68
           addr: 104
         detect_count: 7
+        low_level_hard_fail: false
         prerequisites:
         - type: i2c_write
           addr: 67
@@ -474,22 +476,27 @@ mcu_categories:
           addr: 20
           required: false
         detect_count: 7
+        low_level_hard_fail: false
         prerequisites:
         - type: gpio
           gpio: 23
           level: 1
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 3
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 48
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 7
           data: 0
+          delay_ms: 10
       display:
       - bus_type: dsi
         width: 720
@@ -523,28 +530,34 @@ mcu_categories:
           addr: 67
           reg: 3
           data: 127
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 7
           data: 0
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 116
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 68
+          delay_ms: 10
         - type: i2c_write
           addr: 67
           reg: 5
           data: 116
+          delay_ms: 10
         - type: dsi_write
           cmd: 255
           data:
           - 152
           - 129
           - 1
+          delay_ms: 5
 - mcu: ESP32
   devices:
   - name: M5AtomLite

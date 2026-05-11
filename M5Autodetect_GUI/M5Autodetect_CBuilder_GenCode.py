@@ -250,6 +250,7 @@ class M5HeaderGenerator:
         content.append("    bool internal_pullup;")
         content.append("    std::vector<I2CDetect> detect;")
         content.append("    std::vector<Prerequisite> prerequisites;")
+        content.append("    bool low_level_hard_fail;")
         content.append("};")
         content.append("")
 
@@ -587,10 +588,23 @@ class M5HeaderGenerator:
                         required_count = sum(
                             1 for d in detect if d.get("required", True)
                         )
-                        detect_count = i2c.get("detect_count", required_count)
+                        detect_count = M5HeaderGenerator._parse_int(
+                            i2c.get("detect_count", required_count)
+                        )
                         internal_pullup = (
                             "true" if i2c.get("internal_pullup", False) else "false"
                         )
+                        low_level_hard_fail_val = i2c.get("low_level_hard_fail", True)
+                        if isinstance(low_level_hard_fail_val, str):
+                            low_level_hard_fail = low_level_hard_fail_val.strip().lower() not in (
+                                "0",
+                                "false",
+                                "no",
+                                "off",
+                            )
+                        else:
+                            low_level_hard_fail = bool(low_level_hard_fail_val)
+                        low_level_hard_fail = "true" if low_level_hard_fail else "false"
                         prereqs = i2c.get("prerequisites", [])
                         prereq_str = M5HeaderGenerator._generate_prerequisites(prereqs)
 
@@ -603,7 +617,7 @@ class M5HeaderGenerator:
                             content.append(
                                 f"                {{ 0x{addr:02X}, {required} }},"
                             )
-                        content.append(f"            }}, {prereq_str} }},")
+                        content.append(f"            }}, {prereq_str}, {low_level_hard_fail} }},")
                     content.append("        },")
 
                     # Identify I2C

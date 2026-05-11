@@ -78,6 +78,7 @@ struct I2CBusCheck {
     bool internal_pullup;
     std::vector<I2CDetect> detect;
     std::vector<Prerequisite> prerequisites;
+    bool low_level_hard_fail;
 };
 
 struct I2CIdentify {

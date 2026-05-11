@@ -813,6 +813,19 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         int current_score = 0;
         int skip_count = 0;  // Track number of skipped steps (fewer = higher priority)
         bool step_failed = false;  // Track if any step failed
+        std::vector<bool> i2c_bus_pin_low_soft(device.i2c_checks.size(), false);
+        auto isSoftLowI2cBus = [&](int port, int sda, int scl) {
+            for (std::size_t i = 0; i < device.i2c_checks.size(); ++i) {
+                if (!i2c_bus_pin_low_soft[i]) {
+                    continue;
+                }
+                const auto& bus = device.i2c_checks[i];
+                if (bus.port == port && bus.sda == sda && bus.scl == scl) {
+                    return true;
+                }
+            }
+            return false;
+        };
         
         if (_debug >= debug_debug) {
             LOG_TEXT(debug_debug, "-------------------\r\n");
@@ -879,12 +892,14 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
         // 3. Internal I2C pins High
         if (!step_failed) {
-            bool i2c_pins_high = true;
+            bool i2c_pin_hard_failed = false;
+            bool i2c_pin_skipped = false;
             bool has_i2c_to_check = !device.i2c_checks.empty() || !device.identify_i2c.empty();
             
             if (has_i2c_to_check) {
                 // Check i2c_checks pins
-                for (const auto& i2c_bus : device.i2c_checks) {
+                for (std::size_t i = 0; i < device.i2c_checks.size(); ++i) {
+                    const auto& i2c_bus = device.i2c_checks[i];
                     if (i2c_bus.internal_pullup) {
                         pinMode(i2c_bus.sda, INPUT_PULLUP);
                         pinMode(i2c_bus.scl, INPUT_PULLUP);
@@ -895,29 +910,37 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                         delay(1);
                     }
                     if (digitalRead(i2c_bus.sda) == LOW || digitalRead(i2c_bus.scl) == LOW) {
-                        i2c_pins_high = false;
-                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
-                        break;
+                        if (i2c_bus.low_level_hard_fail) {
+                            i2c_pin_hard_failed = true;
+                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
+                            break;
+                        }
+                        i2c_pin_skipped = true;
+                        i2c_bus_pin_low_soft[i] = true;
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] I2C Pin Low accepted (SDA:%d, SCL:%d)\r\n", i2c_bus.sda, i2c_bus.scl);
                     }
                 }
                 
                 // Also check identify_i2c pins if exists
-                if (i2c_pins_high) {
+                if (!i2c_pin_hard_failed) {
                     for (const auto& i2c_id : device.identify_i2c) {
                         pinMode(i2c_id.sda, INPUT);
                         pinMode(i2c_id.scl, INPUT);
                         delay(1);
                         if (digitalRead(i2c_id.sda) == LOW || digitalRead(i2c_id.scl) == LOW) {
-                            i2c_pins_high = false;
+                            i2c_pin_hard_failed = true;
                             if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Pin Low (SDA:%d, SCL:%d)\r\n", i2c_id.sda, i2c_id.scl);
                             break;
                         }
                     }
                 }
                 
-                if (i2c_pins_high) {
+                if (!i2c_pin_hard_failed && !i2c_pin_skipped) {
                     current_score++;
                     if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Pass] I2C Pins High (+1)\r\n");
+                } else if (!i2c_pin_hard_failed) {
+                    skip_count++;
+                    if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] I2C Pins Low accepted\r\n");
                 } else {
                     step_failed = true;
                 }
@@ -931,12 +954,30 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         // 3. I2C MAP (Communication Test)
         if (!step_failed) {
             bool i2c_comm_match = true;
+            bool i2c_comm_skipped = false;
             int i2c_device_found_count = 0;
             int i2c_device_total_count = 0;
             int i2c_device_required_count = 0;
             
             // Check devices on i2c_checks buses
-            for (const auto& i2c_bus : device.i2c_checks) {
+            for (std::size_t i = 0; i < device.i2c_checks.size(); ++i) {
+                const auto& i2c_bus = device.i2c_checks[i];
+                const int bus_detect_count = i2c_bus.detect_count;
+                const bool bus_low_soft = (i < i2c_bus_pin_low_soft.size() && i2c_bus_pin_low_soft[i]);
+                if (bus_low_soft) {
+                    int bus_required_count = 0;
+                    for (const auto& detect : i2c_bus.detect) {
+                        i2c_device_total_count++;
+                        if (detect.required) {
+                            bus_required_count++;
+                        }
+                    }
+                    i2c_device_required_count += bus_required_count;
+                    i2c_comm_skipped = true;
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] I2C Bus Check skipped after low pins. Found 0/%d\r\n", bus_detect_count);
+                    continue;
+                }
+
                 runPrerequisites(i2c_bus.prerequisites, i2c_bus.sda, i2c_bus.scl, -1, -1, -1, -1, i2c_bus.freq, i2c_bus.port);
                 TwoWire i2c(i2c_bus.port);
                 i2c.begin(i2c_bus.sda, i2c_bus.scl, i2c_bus.freq);
@@ -961,7 +1002,13 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     } else {
                         if (detect.required) {
                             bus_required_all_found = false;
-                            if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Required device not found at addr 0x%02X\r\n", detect.addr);
+                            if (_debug >= debug_debug) {
+                                if (bus_low_soft) {
+                                    LOG_PRINTF(debug_debug, "  [Skip] I2C Required device not found at addr 0x%02X after low pins\r\n", detect.addr);
+                                } else {
+                                    LOG_PRINTF(debug_debug, "  [Fail] I2C Required device not found at addr 0x%02X\r\n", detect.addr);
+                                }
+                            }
                         } else {
                             if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Info] I2C Optional device not found at addr 0x%02X\r\n", detect.addr);
                         }
@@ -970,10 +1017,15 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                 
                 i2c_device_required_count += bus_required_count;
             
-                if (!bus_required_all_found || bus_found_count < i2c_bus.detect_count) {
-                    i2c_comm_match = false;
-                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Bus Check Failed. Found %d/%d, All-required: %s\r\n", bus_found_count, i2c_bus.detect_count, bus_required_all_found ? "yes" : "no");
-                    break;
+                if (!bus_required_all_found || bus_found_count < bus_detect_count) {
+                    if (bus_low_soft) {
+                        i2c_comm_skipped = true;
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] I2C Bus Check skipped after low pins. Found %d/%d, All-required: %s\r\n", bus_found_count, bus_detect_count, bus_required_all_found ? "yes" : "no");
+                    } else {
+                        i2c_comm_match = false;
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Fail] I2C Bus Check Failed. Found %d/%d, All-required: %s\r\n", bus_found_count, bus_detect_count, bus_required_all_found ? "yes" : "no");
+                        break;
+                    }
                 }
             }
             
@@ -996,9 +1048,12 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             }
             
             if (i2c_device_total_count > 0) {
-                if (i2c_comm_match) {
+                if (i2c_comm_match && !i2c_comm_skipped) {
                     current_score++;
                     if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Pass] I2C Comm Match (+1) (%d/%d)\r\n", i2c_device_found_count, i2c_device_required_count);
+                } else if (i2c_comm_match) {
+                    skip_count++;
+                    if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] I2C Comm soft-failed (%d/%d)\r\n", i2c_device_found_count, i2c_device_required_count);
                 } else {
                     step_failed = true;
                 }
@@ -1141,6 +1196,13 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
                     }
                 }
                 else if (disp.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_I2C)) {
+                    if (isSoftLowI2cBus(0, disp.pin_mosi, disp.pin_miso)) {
+                        screen_probe_skipped = true;
+                        current_score++;
+                        skip_count++;
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] I2C Screen skipped after low pins (SDA:%d, SCL:%d) (+1)\r\n", disp.pin_mosi, disp.pin_miso);
+                        continue;
+                    }
                     runPrerequisites(disp.prerequisites, disp.pin_mosi, disp.pin_miso, -1, -1, -1, -1, disp.freq);
                     if (disp.i2c_addr > 0 && disp.pin_mosi >= 0 && disp.pin_miso >= 0) {
                         const I2CIdentifyReadResult read_result = readDisplayID_I2C(disp);
@@ -1269,6 +1331,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
         if (!step_failed) {
             bool touch_checked = false;
             bool touch_matched = false;
+            bool touch_probe_skipped = false;
             
             for (const auto& touch : device.touches) {
                 runPrerequisites(touch.prerequisites, touch.pin_sda, touch.pin_scl,
@@ -1277,6 +1340,13 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
 
                 if (touch.bus_type == static_cast<int>(m5::autodetect::DisplayBusType::BUS_I2C)
                     && touch.addr > 0 && touch.pin_sda >= 0 && touch.pin_scl >= 0) {
+                    if (isSoftLowI2cBus(0, touch.pin_sda, touch.pin_scl)) {
+                        touch_probe_skipped = true;
+                        current_score++;
+                        skip_count++;
+                        if (_debug >= debug_debug) LOG_PRINTF(debug_debug, "  [Skip] Touch I2C skipped after low pins (SDA:%d, SCL:%d) (+1)\r\n", touch.pin_sda, touch.pin_scl);
+                        break;
+                    }
                     touch_checked = true;
                     
                     TwoWire i2c(0);  // Use I2C port 0 for touch
@@ -1353,7 +1423,7 @@ const m5::autodetect::DeviceInfo* M5Autodetect::detect() {
             
             if (touch_checked && !touch_matched) {
                 step_failed = true;
-            } else if (!touch_checked) {
+            } else if (!touch_checked && !touch_probe_skipped) {
                 current_score++;  // No touch to check, give point
                 skip_count++;     // But count as skip (lower priority)
                 if (_debug >= debug_debug) LOG_TEXT(debug_debug, "  [Skip] No Touch to check (+1)\r\n");

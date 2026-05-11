@@ -60,6 +60,7 @@ Sample Configuration:
             sda: 21
             scl: 22
             freq: 400000
+            low_level_hard_fail: true
             detect:
               - name: "AXP2101"
                 addr: 0x34

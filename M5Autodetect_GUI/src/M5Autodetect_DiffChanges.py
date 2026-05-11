@@ -226,6 +226,15 @@ class DiffChangesManager:
                         tr("内部 I2C Port{port}: {changes}").format(port=port, changes=", ".join(changes))
                     )
 
+                if old_bus.get('low_level_hard_fail', True) != new_bus.get('low_level_hard_fail', True):
+                    change_lines.append(
+                        tr("内部 I2C Port{port} 低电平硬失败: {old} -> {new}").format(
+                            port=port,
+                            old=tr("是") if old_bus.get('low_level_hard_fail', True) else tr("否"),
+                            new=tr("是") if new_bus.get('low_level_hard_fail', True) else tr("否"),
+                        )
+                    )
+
                 old_detect_count = old_bus.get('detect_count')
                 new_detect_count = new_bus.get('detect_count')
                 if old_detect_count != new_detect_count:
