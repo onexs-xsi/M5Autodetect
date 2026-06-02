@@ -596,7 +596,8 @@ static DsiIdentifyReadResult readDisplayID_DSI(const m5::autodetect::DisplayConf
         esp_lcd_dsi_bus_config_t bus_cfg = {};
         bus_cfg.bus_id = disp.dsi_bus_id;
         bus_cfg.num_data_lanes = disp.dsi_lane_num;
-        bus_cfg.phy_clk_src = MIPI_DSI_PHY_CLK_SRC_DEFAULT;
+        // 0 表示未指定，由 IDF 根据芯片版本选择默认 DSI PHY 时钟源。
+        bus_cfg.phy_clk_src = (mipi_dsi_phy_pllref_clock_source_t)0;
         bus_cfg.lane_bit_rate_mbps = disp.dsi_lane_mbps;
         if (esp_lcd_new_dsi_bus(&bus_cfg, &dsi_bus) != ESP_OK) goto cleanup;
     }
